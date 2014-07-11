@@ -3,11 +3,12 @@ Cannibal Slugmage of Eden is an old Ludum Dare entry that I never finished.
 The theme was evolution. You play as a cannibal slugmage, trying to breed a naturally-evolving population of slugs to better fuel your magic and eventually allow you to remake the world in your own image. The competition version was nowhere near as cool as it sounds, but I hope to turn Slugmage into the game it was meant to be!
 
 
-+++ Build Instructions
+### Build Instructions
 There is currently only a build script for SBCL, and it's only been tested on Windows. I hope to fix both of these things soon.
-1. Make sure you have quicklisp and lispbuilder-sdl.
-2. If you're on Windows, make sure `SDL.dll` is in the source directory.
-3. Run `sbcl` and use the following repl commands:
+
+  1. Make sure you have quicklisp and lispbuilder-sdl.
+  2. If you're on Windows, make sure `SDL.dll` is in the source directory.
+  3. Run `sbcl` and use the following repl commands:
 
 ```
 (compile-file "make.lisp")
