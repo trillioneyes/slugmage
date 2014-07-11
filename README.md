@@ -15,8 +15,8 @@ There is currently only a build script for SBCL, and it's only been tested on Wi
 (load "make.fasl")
 (make)
 ```
-    If you want, you can pass a string argument to `make` to set a different 
-    executable name (like `(make "slugmagething")`). By default it's called
-    `slugmage.exe`, because I started the project on Windows.
+   If you want, you can pass a string argument to `make` to set a different 
+   executable name (like `(make "slugmagething")`). By default it's called
+   `slugmage.exe`, because I started the project on Windows.
 
 And now you should be able to run it! (Note that on Windows, if you want to move the executable, you'll need to make sure `SDL.dll` is in the same directory.)

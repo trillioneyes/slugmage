@@ -244,7 +244,8 @@ arguments (x y button)")
   (loop for dx from (- dist) upto dist
 	for dy from (- dist) upto dist
 	when (not (and (= dx 0) (= dy 0)))
-	when (typep (item-at world (+ (car spot) dx) (+ (cadr spot) dy)) filter-type)
+	when (typep (item-at world (+ (car spot) dx) (+ (cadr spot) dy))
+		    filter-type)
 	collect (item-at world (+ (car spot) dx) (+ (cadr spot) dy))))
 (defun population (&rest args)
   (length (apply 'neighbors args)))
@@ -303,7 +304,7 @@ arguments (x y button)")
 		       (take-turn (cdar cells) (caar cells) world))))
 	   (monsters world))
   (setf (monsters world)
-	(remove nil (monsters world))))
+	(remove-if-not #'cdr (monsters world))))
 
 
 (defgeneric mate (slug1 slug2))
@@ -332,12 +333,25 @@ arguments (x y button)")
 (defmethod mutate ((stat number) &optional (tolerance 20))
   (max 1 (+ stat (random-delta tolerance))))
 
+(defun eat (slug1 slug2 world)
+  (incf (mana slug1) (ceiling (/ (mana slug2) 2)))
+  (incf (life slug1) (ceiling (/ (weight slug2) 2)))
+  (kill slug2 world))
+
+(defun fight (slug1 slug2 world)
+  (flet ((power (slug) (max 1 (- (mana slug) (docility slug)))))
+    (decf (life slug1) (power slug2))
+    (decf (life slug2) (power slug1)))
+  (cond ((< (life slug1) 1 (life slug2))
+	 (eat slug2 slug1 world))
+	((< (life slug2) 1 (life slug1))
+	 (eat slug1 slug2 world))))
+
 
 ;;; Used in take-turn for slugs
 ;;; Should the given slug turn into a font?
 (defun transform? (slug coords world)
   ; will be used to check distances to other fonts, but not for now
-  (declare (ignore world))
   (with-slots (home-font target life threshold pers docility mana weight)
 	      slug
     (or (and (< life pers)
@@ -372,7 +386,7 @@ arguments (x y button)")
 	(dolist (other (neighbors coords world))
 	  (cond ((one-in (max 1 (- docility
 				   (floor (/ (- mana (mana other)) 2))))) 
-		 (kill (rassoc other (monsters world)) world))
+		 (fight monster other world))
 		((one-in (ceiling (* (color-dist monster other) 15)))
 		 (push (mate monster other) (daughters monster))))))
     (if (or (not home-font) (> (distance coords (car home-font)) 3.5)) 
@@ -385,7 +399,7 @@ arguments (x y button)")
      ((> life 0)
       (walk-toward (cons coords monster) target world))
 					; nil return value says to delete this monster
-     (t nil))))
+     (t (cons coords nil)))))
 
 
 (defgeneric find-home-font (world slug))
@@ -517,8 +531,10 @@ arguments (x y button)")
   (cdr (world-at world x y)))
 
 
-(defun kill (cell world)
-  (setf (monsters world) (delete cell (monsters world) :test #'equal)))
+(defun kill (monster world)
+  (setf (monsters world)
+	(delete monster (monsters world)
+		:test (lambda (monster cell) (equal (cdr cell) monster)))))
 
 (defun grab (world x y)
   (let ((cell (world-at world x y))
