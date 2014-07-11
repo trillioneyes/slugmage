@@ -1,0 +1,3 @@
+Cannibal Slugmage of Eden is an old Ludum Dare entry that I never finished.
+
+The theme was evolution. You play as a cannibal slugmage, trying to breed a naturally-evolving population of slugs to better fuel your magic and eventually allow you to remake the world in your own image. The competition version was nowhere near as cool as it sounds, but I hope to turn Slugmage into the game it was meant to be!
