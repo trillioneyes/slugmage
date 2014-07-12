@@ -241,12 +241,40 @@ arguments (x y button)")
 	      :initform nil)
    (target :accessor target
 	   :initform (list (random 60) (random 60)))
-   (life :accessor life
+   (food :accessor food
 	 :initform 50
-	 :initarg :life)
-   (threshold :accessor threshold
-	      :initform (mutate 25 40)
-	      :initarg :threshold)
+	 :initarg :food)
+   (life :accessor life
+	 :initarg :life
+	 :initform nil)
+   (max-life :accessor max-life
+	     :initarg :max-life
+	     :initform (mutate 15 20))
+   (weapon :accessor weapon
+	   :initarg :weapon
+	   :initform (mutate 5 8))
+   (armor :accessor armor
+	  :initarg :armor
+	  :initform (mutate 3 5))
+   (k-strat :accessor k-strat
+	    :initarg :k-strat
+	    :initform (mutate 30 40)
+	    :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).")
+   (grazing :accessor grazing
+	    :initarg :grazing
+	    :initform (mutate 30 40))
+   (hunting :accessor hunting
+	    :initarg :hunting
+	    :initform (mutate 30 40))
+   (social :accessor social
+	   :initarg :social
+	   :initform (mutate 30 40))
+   (aggression :accessor aggression
+	       :initarg :aggression
+	       :initform (mutate 30 40))
+   (curiosity :accessor curiosity
+	      :initarg :curiosity
+	      :initform (mutate 30 40))
    (docility :accessor docility
 	     :initarg :docility
 	     :initform (mutate 10 40))
@@ -263,6 +291,9 @@ arguments (x y button)")
 	(setf color (sdl:color :r (min 255 (max 0(- 255 (* 15 docility))))
 			       :g (min 255 (max 0(* 15 weight)))
 			       :b (min 255 (max 0 (* 15 mana))))))))
+(defmethod life :before ((slug slug))
+  (if (null (slot-value slug 'life))
+      (setf (life slug) (max-life slug))))
 
 
 (defgeneric color-dist (one two))
@@ -350,39 +381,52 @@ arguments (x y button)")
 
 (defgeneric mate (slug1 slug2))
 (defmethod mate ((slug1 slug) (slug2 slug))
-  (with-slots (mana threshold pers) slug1
-    (with-slots (weight docility (d threshold)) slug2
-      (let ((tolerance (+ 2 (floor (/ 200 d)))))
+  (with-slots (mana pers weapon max-life social) slug1
+    (with-slots (weight docility armor grazing hunting aggression) slug2
+      (let ((tolerance 5))
 	(make-instance 'slug :pers (mutate pers tolerance)
 		       :mana (mutate mana tolerance)
-		       :threshold (mutate threshold tolerance)
 		       :weight (mutate weight tolerance)
-		       :docility (mutate docility tolerance))))))
+		       :docility (mutate docility tolerance)
+		       :weapon (mutate weapon tolerance)
+		       :max-life (mutate max-life tolerance)
+		       :social (mutate social tolerance)
+		       :armor (mutate armor tolerance)
+		       :grazing (mutate grazing tolerance)
+		       :hunting (mutate hunting tolerance)
+		       :aggression (mutate aggression tolerance))))))
 
 (defgeneric mutate (slug &optional tolerance))
 
 (defmethod mutate ((slug slug) &optional tolerance)
   (declare (ignore tolerance))
-  (with-slots (mana weight threshold docility pers) slug
-    (make-instance 'slug :threshold (mutate threshold)
+  (with-slots (mana weight docility pers weapon max-life social armor grazing hunting aggression)
+      slug
+    (make-instance 'slug 
 		   :docility (mutate docility)
 		   :mana (mutate mana)
 		   :docility (mutate docility)
 		   :pers (mutate pers)
-		   :weight (mutate weight))))
+		   :weight (mutate weight)
+		   :weapon (mutate weapon)
+		   :armor (mutate armor)
+		   :max-life (mutate max-life)
+		   :social (mutate social)
+		   :grazing (mutate grazing)
+		   :hunting (mutate hunting)
+		   :aggression (mutate aggression))))
 
 (defmethod mutate ((stat number) &optional (tolerance 20))
   (max 1 (+ stat (random-delta tolerance))))
 
 (defun eat (slug1 slug2 world)
   (incf (mana slug1) (ceiling (/ (mana slug2) 2)))
-  (incf (life slug1) (ceiling (/ (weight slug2) 2)))
+  (incf (food slug1) (ceiling (/ (weight slug2) 2)))
   (kill slug2 world))
 
-(defun fight (slug1 slug2 world)
-  (flet ((power (slug) (max 1 (- (mana slug) (docility slug)))))
-    (decf (life slug1) (power slug2))
-    (decf (life slug2) (power slug1)))
+(defun fight (slug1 slug2 world) 
+  (decf (life slug1) (max 1 (- (weapon slug2) (armor slug1))))
+  (decf (life slug2) (max 1 (- (weapon slug1) (armor slug2))))
   (cond ((< (life slug1) 1 (life slug2))
 	 (eat slug2 slug1 world))
 	((< (life slug2) 1 (life slug1))
@@ -399,9 +443,9 @@ arguments (x y button)")
 ;;; Used in take-turn for slugs
 ;;; Should the given slug turn into a font?
 (defun transform? (slug coords world)
-  (with-slots (home-font target life threshold pers docility mana weight)
+  (with-slots (home-font target food pers docility mana weight)
 	      slug
-    (or (and (< life pers)
+    (or (and (< food pers)
 	     (one-in (+ 100 (- mana)
 			(population coords world :dist 5 :filter-type 'slug-font)))))))
 (defun set-explore-target (monster coords world)
@@ -421,7 +465,7 @@ arguments (x y button)")
   (cons coords monster))
 
 (defmethod take-turn ((monster slug) coords world)
-  (with-slots (home-font target life threshold pers docility mana weight)
+  (with-slots (home-font target food pers docility mana weight)
       monster
     (unless (member home-font (monsters world) :test #'equal)
       (setf home-font (find-home-font world monster)))
@@ -429,7 +473,7 @@ arguments (x y button)")
 	(if (prob (population coords world :dist 5) 2)
 	    (set-explore-target monster coords world)
 	    (setf target (car (find-target world)))))
-    (if (and home-font (< life threshold)) (setf target (car home-font))
+    (if (and home-font (< food 15)) (setf target (car home-font))
 	(dolist (other (neighbors coords world))
 	  (cond ((one-in (max 1 (- docility
 				   (floor (/ (- mana (mana other)) 2))))) 
@@ -437,13 +481,13 @@ arguments (x y button)")
 		((one-in (ceiling (* (color-dist monster other) 15)))
 		 (push (mate monster other) (daughters monster))))))
     (if (or (not home-font) (> (distance coords (car home-font)) 3.5)) 
-	(decf life (ceiling (/ mana 5)))
-	(incf life))
+	(decf food (ceiling (/ mana 5)))
+	(incf food))
     (cond
      ((transform? monster coords world)
       (change-class monster 'slug-font)
       (cons coords monster))
-     ((> life 0)
+     ((> food 0)
       (walk-toward (cons coords monster) target world))
 					; nil return value says to delete this monster
      (t (push (make-death-anim (car coords) (cadr coords))
@@ -677,8 +721,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
       (print-att 'docility 0 2)
       (print-att 'pers 0 3)
       (print-att 'weight 1 1)
-      (print-att 'life 1 2)
-      (print-att 'threshold 1 3)
+      (print-att 'food 1 2)
+      (print-att 'life 1 3)
       (sdl:draw-surface-at-* surface x y :surface window))))
 
 (defun draw-spell-info (spell window x y w h)
