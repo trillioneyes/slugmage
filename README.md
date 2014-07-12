@@ -6,7 +6,7 @@ The theme was evolution. You play as a cannibal slugmage, trying to breed a natu
 ### Build Instructions
 There is currently only a build script for SBCL. I hope to write a more portable script soon.
 
-  1. Make sure you have quicklisp and lispbuilder-sdl.
+  1. Make sure you have quicklisp. (lispbuilder-sdl is also required, but quicklisp does a pretty good job of installing it and its dependencies.)
   2. If you're on Windows, make sure `SDL.dll` is in the source directory.
   3. Run `sbcl --load make.lisp`. If you want, you can also specify an alternate name for the output (the default is `slugmage.exe`, because I started the project on windows): `sbcl --load make.lisp slugmage`.
 
