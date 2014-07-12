@@ -4,7 +4,7 @@ The theme was evolution. You play as a cannibal slugmage, trying to breed a natu
 
 
 ### Build Instructions
-There is currently only a build script for SBCL, and it's only been tested on Windows. I hope to fix both of these things soon.
+There is currently only a build script for SBCL. I hope to write a more portable and automatic script soon.
 
   1. Make sure you have quicklisp and lispbuilder-sdl.
   2. If you're on Windows, make sure `SDL.dll` is in the source directory.
