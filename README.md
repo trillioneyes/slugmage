@@ -19,4 +19,4 @@ There is currently only a build script for SBCL. I hope to write a more portable
    executable name (like `(make "slugmagething")`). By default it's called
    `slugmage.exe`, because I started the project on Windows.
 
-And now you should be able to run it! (Note that on Windows, if you want to move the executable, you'll need to make sure `SDL.dll` is in the same directory.)
+And now you should be able to run it! (If you move the executable, make sure the images are in the same directory, and on windows that you also have SDL.dll.)
