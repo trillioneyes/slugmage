@@ -5,6 +5,10 @@
 (defparameter *world* nil)
 (defparameter *game* nil)
 
+;;; SDL surfaces; initialized later in main
+(defparameter *skull* nil)
+(defparameter *bash* nil)
+
 (defparameter sdl:*default-font* sdl:*font-8x8*)
 (sdl:initialise-default-font)
 (defparameter *tile-size* 10)
@@ -382,7 +386,14 @@ arguments (x y button)")
   (cond ((< (life slug1) 1 (life slug2))
 	 (eat slug2 slug1 world))
 	((< (life slug2) 1 (life slug1))
-	 (eat slug1 slug2 world))))
+	 (eat slug1 slug2 world))
+	(t
+	 (let ((coords1 (car (rassoc slug1 (monsters world))))
+	       (coords2 (car (rassoc slug2 (monsters world)))))
+	   (push (make-bash-anim (car coords1) (cadr coords1))
+		 (active-animations *game*))
+	   (push (make-bash-anim (car coords2) (cadr coords2))
+		 (active-animations *game*))))))
 
 
 ;;; Used in take-turn for slugs
@@ -477,27 +488,26 @@ arguments (x y button)")
 		       (+ radius (* *tile-size* y))
 		       radius :surface window :color sdl:*white*)))
 
-(defun draw-death-at (x y)
-  "Given a pair of x and y coordinates, returns a function suitable for use as the draw-fn of an animation"
+(defun blink-image (x y period image)
+  "Returns a function suitable for use as the draw-fn of an animation.
+x and y are the coordinates to draw to. period is the length of one full blink-on, blink-off cycle in frames."
   (lambda (turns frames surface player-offset)
     (declare (ignore turns))
-    (if (< 0 (mod frames 10) 5)
-	(let* ((px (car player-offset))
-	       (py (cadr player-offset))
-	       (x1 (+ x px))
-	       (y1 (+ y py))
-	       (x2 (+ x 1 px))
-	       (y2 (+ y 1 py)))
-	  (sdl:draw-line-* (* x1 *tile-size*) (* y1 *tile-size*)
-			   (* x2 *tile-size*) (* y2 *tile-size*)
-			   :surface surface
-			   :color sdl:*red*)
-	  (sdl:draw-line-* (* x1 *tile-size*) (* y2 *tile-size*)
-			   (* x2 *tile-size*) (* y1 *tile-size*)
-			   :surface surface
-			   :color sdl:*red*)))))
+    (let* ((px (car player-offset))
+	   (py (cadr player-offset))
+	   (x1 (+ x px))
+	   (y1 (+ y py)))
+      (if (< 0 (mod frames period) (ceiling (/ period 2)))
+	  (sdl:draw-surface-at-* image (* x1 *tile-size*)
+			             (* y1 *tile-size*)
+			       :surface surface)))))
+
 (defun make-death-anim (x y)
-  (make-instance 'animation :draw-fn (draw-death-at x y) :turns 2 :frames 40))
+  (make-instance 'animation :draw-fn (blink-image x y 15 *skull*)
+		 :turns 2 :frames 60))
+(defun make-bash-anim (x y)
+  (make-instance 'animation :draw-fn (blink-image x y 15 *bash*)
+		 :turns 2 :frames 60))
 
 (defmethod draw ((object slug-font) x y window)
   (sdl:draw-box-* (* *tile-size* x)
@@ -835,4 +845,6 @@ arguments (x y button)")
   (setf *game* (make-instance 'game :world *world*))
   (sdl:with-init ()
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
+    (setf *skull* (sdl:load-image "death.bmp")
+	  *bash* (sdl:load-image "hit.bmp"))
     (game-loop)))
