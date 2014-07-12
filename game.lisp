@@ -591,11 +591,15 @@ arguments (x y button)")
   (cdr (world-at world x y)))
 
 
+(defun remove-monster (monster world)
+  (setf (monsters world)
+	(remove-if (lambda (cell) (equal (cdr cell) monster))
+		   (monsters world))))
+
+
 (defun kill (monster world)
   (let ((coords (car (rassoc monster (monsters world)))))
-   (setf (monsters world)
-	 (delete monster (monsters world)
-		 :test (lambda (monster cell) (equal (cdr cell) monster))))
+   (remove-monster monster world)
    (push (make-death-anim (car coords) (cadr coords))
 	 (active-animations *game*))))
 
@@ -606,7 +610,7 @@ arguments (x y button)")
 			  (weight item))
 		       (weight (cdr (player world)))))
       (push item (inventory (cdr (player world))))
-      (kill cell world))))
+      (remove-monster (cdr cell) world))))
 
 (defun inv-weight (player)
   (reduce #'+ (mapcar #'weight (inventory player))))
