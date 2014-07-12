@@ -1,7 +1,9 @@
 (eval-when (:compile-toplevel)
    (ql:quickload :lispbuilder-sdl))
 
-(declaim (special *game*))
+;;; Initialized later in main
+(defparameter *world* nil)
+(defparameter *game* nil)
 
 (defparameter sdl:*default-font* sdl:*font-8x8*)
 (sdl:initialise-default-font)
@@ -141,7 +143,9 @@ arguments (x y button)")
    (ui-border :accessor ui-border
 	      :initform 5)
    (active-spell :accessor active-spell
-		 :initform nil)))
+		 :initform nil)
+   (active-animations :accessor active-animations
+		      :initform nil)))
 
 (defclass world ()
   ((player   :accessor player
@@ -153,6 +157,35 @@ arguments (x y button)")
    (walls    :accessor walls
 	     :initarg :walls
 	     :initform nil)))
+
+(defclass animation ()
+  ((frames :accessor frames
+	   :initarg :frames
+	   :documentation "Length of this animation in frames. Can be nil if the animation can last an arbitrary number of frames.")
+   (turns :accessor turns
+	  :initarg :turns
+	  :documentation "Length of this animation in turns. Can be nil if the animation can last an arbitrary number of turns.")
+   (draw-fn :accessor draw-fn
+	    :initarg :draw-fn
+	    :documentation "Called each frame with the following arguments: ~
+            (age-turns age-frames target-surface player-offset)")
+   (age-turns :accessor age-turns
+	      :initform 0
+	      :documentation "The number of turns this animation has been active.")
+   (age-frames :accessor age-frames
+	       :initform 0
+	       :documentation "The number of frames this animation has been active.")))
+
+(defun draw-animation (anim surface)
+  (let ((player-offset
+	 (list
+	  (- (/ 400 *tile-size*) (caar (player (world *game*))))
+	  (- (/ 300 *tile-size*) (cadar (player (world *game*)))))))
+    (funcall (draw-fn anim) (age-turns anim) (age-frames anim) surface player-offset)))
+(defun expired? (anim)
+  (with-slots (frames age-frames turns age-turns) anim
+   (or (and frames (>= age-frames frames))
+       (and turns (>= age-turns turns)))))
 
 
 (defgeneric find-target (world))
@@ -264,8 +297,12 @@ arguments (x y button)")
 
 (defun play-one-round (game)
   (when (eq (status game) :end-turn) 
-    (take-turns (world game))
+    (take-turns (world game)) 
     (birth-all (world game))
+    (setf (active-animations game)
+	  (remove-if 'expired? (active-animations game)))
+    (dolist (anim (active-animations game))
+      (incf (age-turns anim)))
     (setf (status game) :playing)))
 
 (defun distance (p1 p2)
@@ -351,7 +388,6 @@ arguments (x y button)")
 ;;; Used in take-turn for slugs
 ;;; Should the given slug turn into a font?
 (defun transform? (slug coords world)
-  ; will be used to check distances to other fonts, but not for now
   (with-slots (home-font target life threshold pers docility mana weight)
 	      slug
     (or (and (< life pers)
@@ -399,7 +435,9 @@ arguments (x y button)")
      ((> life 0)
       (walk-toward (cons coords monster) target world))
 					; nil return value says to delete this monster
-     (t (cons coords nil)))))
+     (t (push (make-death-anim (car coords) (cadr coords))
+	 (active-animations *game*))
+	(cons coords nil)))))
 
 
 (defgeneric find-home-font (world slug))
@@ -438,6 +476,28 @@ arguments (x y button)")
     (sdl:draw-circle-* (+ radius (* *tile-size* x))
 		       (+ radius (* *tile-size* y))
 		       radius :surface window :color sdl:*white*)))
+
+(defun draw-death-at (x y)
+  "Given a pair of x and y coordinates, returns a function suitable for use as the draw-fn of an animation"
+  (lambda (turns frames surface player-offset)
+    (declare (ignore turns))
+    (if (< 0 (mod frames 10) 5)
+	(let* ((px (car player-offset))
+	       (py (cadr player-offset))
+	       (x1 (+ x -1/2 px))
+	       (y1 (+ y -1/2 py))
+	       (x2 (+ x 1/2 px))
+	       (y2 (+ y 1/2 py)))
+	  (sdl:draw-line-* (* x1 *tile-size*) (* y1 *tile-size*)
+			   (* x2 *tile-size*) (* y2 *tile-size*)
+			   :surface surface
+			   :color sdl:*red*)
+	  (sdl:draw-line-* (* x1 *tile-size*) (* y2 *tile-size*)
+			   (* x2 *tile-size*) (* y1 *tile-size*)
+			   :surface surface
+			   :color sdl:*red*)))))
+(defun make-death-anim (x y)
+  (make-instance 'animation :draw-fn (draw-death-at x y) :turns 2 :frames 40))
 
 (defmethod draw ((object slug-font) x y window)
   (sdl:draw-box-* (* *tile-size* x)
@@ -532,9 +592,12 @@ arguments (x y button)")
 
 
 (defun kill (monster world)
-  (setf (monsters world)
-	(delete monster (monsters world)
-		:test (lambda (monster cell) (equal (cdr cell) monster)))))
+  (let ((coords (car (rassoc monster (monsters world)))))
+   (setf (monsters world)
+	 (delete monster (monsters world)
+		 :test (lambda (monster cell) (equal (cdr cell) monster))))
+   (push (make-death-anim (car coords) (cadr coords))
+	 (active-animations *game*))))
 
 (defun grab (world x y)
   (let ((cell (world-at world x y))
@@ -555,15 +618,15 @@ arguments (x y button)")
 	(delete obj (inventory (cdr (player world))))))
 
 
-;;; Initialized later in main
-(defparameter *world* nil)
-(defparameter *game* nil)
 
 (defun draw-game (game window) 
   (draw (world game) 
 	(- (/ 400 *tile-size*) (caar (player (world game))))
 	(- (/ 300 *tile-size*) (cadar (player (world game)))) 
-	window))
+	window)
+  (dolist (anim (active-animations game))
+    (unless (expired? anim) (draw-animation anim window))
+    (incf (age-frames anim))))
 
 (defun mod* (num divisor)
   (let ((x (mod num divisor)))
