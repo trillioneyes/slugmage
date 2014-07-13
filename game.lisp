@@ -13,8 +13,6 @@
 (sdl:initialise-default-font)
 (defparameter *tile-size* 10)
 
-(sdl:enable-key-repeat 300 100)
-
 (defparameter *hooks-registry* (make-hash-table)
   "The keys are game statuses (e.g. :playing and :end-turn). The values should be hashes from hook types ('key-up, 'key-down, 'mouse-up, 'mouse-down) to lists of functions.")
 
@@ -62,7 +60,7 @@ arguments (x y button)")
 ;;; A higher penalty decreases the probability for low values of x, but has
 ;;; vanishing impact for large x.
 (defun prob (x &optional (penalty 10))
-  (< (random (+ x penalty)) x))
+  (and (> x 0) (< (random (+ x penalty)) x)))
 
 (defun directional (key) (member key *directions*))
 (setf (get :sdl-key-a 'direction) (list -1 0)
@@ -262,10 +260,12 @@ arguments (x y button)")
 	    :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).")
    (grazing :accessor grazing
 	    :initarg :grazing
-	    :initform (mutate 30 40))
+	    :initform (mutate 30 40)
+	    :documentation "Grazing efficiency. Higher value means more nutrition recovered from being in the vicinity of a friendly font.")
    (hunting :accessor hunting
 	    :initarg :hunting
-	    :initform (mutate 30 40))
+	    :initform (mutate 30 40)
+	    :documentation "Hunting efficiency. Higher value means more nutrition recovered from eating another slug.")
    (social :accessor social
 	   :initarg :social
 	   :initform (mutate 30 40))
@@ -274,26 +274,24 @@ arguments (x y button)")
 	       :initform (mutate 30 40))
    (curiosity :accessor curiosity
 	      :initarg :curiosity
-	      :initform (mutate 30 40))
-   (docility :accessor docility
-	     :initarg :docility
-	     :initform (mutate 10 40))
-   (pers :accessor pers
-	 :initarg :pers
-	 :initform (mutate 6 3)
-	 :documentation "perseverance")
+	      :initform (mutate 30 40)) 
    (weight :initform (mutate 5 5))
    (mana :initform (mutate 1 5))))
 
 (defmethod color :before ((slug slug))
   (if (null (slot-value slug 'color))
-      (with-slots (color mana weight docility) slug
-	(setf color (sdl:color :r (min 255 (max 0(- 255 (* 15 docility))))
-			       :g (min 255 (max 0(* 15 weight)))
+      (with-slots (aggression color mana weight) slug
+	(setf color (sdl:color :r (min 255 (max 0 (* 15 aggression)))
+			       :g (min 255 (max 0 (* 15 weight)))
 			       :b (min 255 (max 0 (* 15 mana))))))))
 (defmethod life :before ((slug slug))
   (if (null (slot-value slug 'life))
       (setf (life slug) (max-life slug))))
+
+(defun trait-sum (slug)
+  "Returns the sum of all traits of a given slug that are unilaterally a good thing."
+  (with-slots (hunting grazing weapon armor max-life) slug
+    (+ hunting grazing weapon armor max-life)))
 
 
 (defgeneric color-dist (one two))
@@ -309,12 +307,12 @@ arguments (x y button)")
 
 
 (defun neighbors (spot world &key (dist 1) (filter-type 'slug))
-  (loop for dx from (- dist) upto dist
-	for dy from (- dist) upto dist
-	when (not (and (= dx 0) (= dy 0)))
-	when (typep (item-at world (+ (car spot) dx) (+ (cadr spot) dy))
-		    filter-type)
-	collect (item-at world (+ (car spot) dx) (+ (cadr spot) dy))))
+  (loop for dx from (- dist) upto dist append
+       (loop for dy from (- dist) upto dist
+	  when (not (and (= dx 0) (= dy 0)))
+	  when (typep (item-at world (+ (car spot) dx) (+ (cadr spot) dy))
+		      filter-type)
+	  collect (item-at world (+ (car spot) dx) (+ (cadr spot) dy)))))
 (defun population (&rest args)
   (length (apply 'neighbors args)))
 
@@ -381,13 +379,12 @@ arguments (x y button)")
 
 (defgeneric mate (slug1 slug2))
 (defmethod mate ((slug1 slug) (slug2 slug))
-  (with-slots (mana pers weapon max-life social) slug1
-    (with-slots (weight docility armor grazing hunting aggression) slug2
+  (with-slots (mana weapon max-life social home-font) slug1
+    (with-slots (weight armor grazing hunting aggression) slug2
       (let ((tolerance 5))
-	(make-instance 'slug :pers (mutate pers tolerance)
+	(make-instance 'slug :home-font home-font
 		       :mana (mutate mana tolerance)
 		       :weight (mutate weight tolerance)
-		       :docility (mutate docility tolerance)
 		       :weapon (mutate weapon tolerance)
 		       :max-life (mutate max-life tolerance)
 		       :social (mutate social tolerance)
@@ -400,13 +397,10 @@ arguments (x y button)")
 
 (defmethod mutate ((slug slug) &optional tolerance)
   (declare (ignore tolerance))
-  (with-slots (mana weight docility pers weapon max-life social armor grazing hunting aggression)
+  (with-slots (mana weight weapon max-life social armor grazing hunting aggression)
       slug
     (make-instance 'slug 
-		   :docility (mutate docility)
 		   :mana (mutate mana)
-		   :docility (mutate docility)
-		   :pers (mutate pers)
 		   :weight (mutate weight)
 		   :weapon (mutate weapon)
 		   :armor (mutate armor)
@@ -443,17 +437,17 @@ arguments (x y button)")
 ;;; Used in take-turn for slugs
 ;;; Should the given slug turn into a font?
 (defun transform? (slug coords world)
-  (with-slots (home-font target food pers docility mana weight)
+  (with-slots (home-font target food mana weight)
 	      slug
-    (or (and (< food pers)
+    (or (and (< food 3)
 	     (one-in (+ 100 (- mana)
 			(population coords world :dist 5 :filter-type 'slug-font)))))))
 (defun set-explore-target (monster coords world)
   (loop while (prob (population (target monster) world :dist 5) 2) do
     (destructuring-bind (x y) coords
       (setf (target monster)
-	    (list (+ x (random-delta (* 15 (pers monster))))
-		  (+ y (random-delta (* 15 (pers monster)))))))))
+	    (list (+ x (random-delta 100))
+		  (+ y (random-delta 100)))))))
 
 (defgeneric take-turn (monster coords world))
 
@@ -462,27 +456,31 @@ arguments (x y button)")
       (let ((spawn (mutate monster)))
 	(setf (home-font spawn) monster)
 	(push spawn (daughters monster))))
+  (if (< (life monster) (max-life monster))
+      (incf (life monster)))
   (cons coords monster))
 
 (defmethod take-turn ((monster slug) coords world)
-  (with-slots (home-font target food pers docility mana weight)
+  (with-slots (aggression home-font target food mana weight grazing max-life social)
       monster
     (unless (member home-font (monsters world) :test #'equal)
       (setf home-font (find-home-font world monster)))
-    (if (one-in pers)
+    (if (one-in 15)
 	(if (prob (population coords world :dist 5) 2)
 	    (set-explore-target monster coords world)
 	    (setf target (car (find-target world)))))
     (if (and home-font (< food 15)) (setf target (car home-font))
 	(dolist (other (neighbors coords world))
-	  (cond ((one-in (max 1 (- docility
-				   (floor (/ (- mana (mana other)) 2))))) 
+	  (cond ((prob aggression 15) 
 		 (fight monster other world))
-		((one-in (ceiling (* (color-dist monster other) 15)))
+		((prob (- social (population coords world :dist 5)) 15)
 		 (push (mate monster other) (daughters monster))))))
-    (if (or (not home-font) (> (distance coords (car home-font)) 3.5)) 
-	(decf food (ceiling (/ mana 5)))
-	(incf food))
+    (if (or (not home-font) (> (distance coords (car home-font)) 8))
+	(decf food (ceiling (sqrt (/ (trait-sum monster) 10))))
+	(incf food (ceiling (/ grazing 5))))
+    (unless (> (life monster) max-life)
+	(incf (life monster))
+	(decf food))
     (cond
      ((transform? monster coords world)
       (change-class monster 'slug-font)
@@ -702,10 +700,12 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 	       (concatenate 
 		'string
 		(case att
-		  (pers "PERS")
-		  (docility "TAME")
+		  (weapon "ATTK")
+		  (aggression "AGRO")
 		  (mana "MANA")
 		  (weight "WGHT")
+		  (social "SOCL")
+		  (armor "ARMR")
 		  (t (subseq (symbol-name att) 0 4)))
 		":~2d")) 
 	     (print-att (att column row)
@@ -718,11 +718,15 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
        (if (typep slug 'slug-font) "Font" "Slug")
        0 0 :surface surface)
       (print-att 'mana 0 1)
-      (print-att 'docility 0 2)
-      (print-att 'pers 0 3)
+      (print-att 'aggression 0 2)
+      (print-att 'weapon 0 3)
       (print-att 'weight 1 1)
       (print-att 'food 1 2)
       (print-att 'life 1 3)
+      (print-att (if (< (grazing slug) (hunting slug)) 'hunting 'grazing)
+		 2 1)
+      (print-att 'social 2 2)
+      (print-att 'armor 2 3)
       (sdl:draw-surface-at-* surface x y :surface window))))
 
 (defun draw-spell-info (spell window x y w h)
@@ -889,6 +893,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (setf *game* (make-instance 'game :world *world*))
   (sdl:with-init ()
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
+    (sdl:enable-key-repeat 300 100)
     (setf *skull* (sdl:load-image "death.bmp")
 	  *bash* (sdl:load-image "hit.bmp"))
     (game-loop)))
