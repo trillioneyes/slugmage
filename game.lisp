@@ -8,6 +8,7 @@
 ;;; SDL surfaces; initialized later in main
 (defparameter *skull* nil)
 (defparameter *bash* nil)
+(defparameter *heart* nil)
 
 (defparameter sdl:*default-font* sdl:*font-8x8*)
 (sdl:initialise-default-font)
@@ -379,6 +380,10 @@ arguments (x y button)")
 
 (defgeneric mate (slug1 slug2))
 (defmethod mate ((slug1 slug) (slug2 slug))
+  (let ((coord1 (car (rassoc slug1 (monsters *world*))))
+	 (coord2 (car (rassoc slug2 (monsters *world*)))))
+    (push (make-mate-anim (first coord1) (second coord1)) (active-animations *game*))
+    (push (make-mate-anim (first coord2) (second coord2)) (active-animations *game*)))
   (with-slots (mana weapon max-life social home-font) slug1
     (with-slots (weight armor grazing hunting aggression) slug2
       (let ((tolerance 5))
@@ -488,9 +493,7 @@ arguments (x y button)")
      ((> food 0)
       (walk-toward (cons coords monster) target world))
 					; nil return value says to delete this monster
-     (t (push (make-death-anim (car coords) (cadr coords))
-	 (active-animations *game*))
-	(cons coords nil)))))
+     (t (kill monster world)))))
 
 
 (defgeneric find-home-font (world slug))
@@ -533,6 +536,9 @@ arguments (x y button)")
 (defun blink-image (x y period image)
   "Returns a function suitable for use as the draw-fn of an animation.
 x and y are the coordinates to draw to. period is the length of one full blink-on, blink-off cycle in frames."
+  (unless (and x y)
+    (print (monsters *world*))
+    (error "Here we go! The bug is here! Backtrace! o.o"))
   (lambda (turns frames surface player-offset)
     (declare (ignore turns))
     (let* ((px (car player-offset))
@@ -549,6 +555,9 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 		 :turns 2 :frames 60))
 (defun make-bash-anim (x y)
   (make-instance 'animation :draw-fn (blink-image x y 15 *bash*)
+		 :turns 2 :frames 60))
+(defun make-mate-anim (x y)
+  (make-instance 'animation :draw-fn (blink-image x y 15 *heart*)
 		 :turns 2 :frames 60))
 
 (defmethod draw ((object slug-font) x y window)
@@ -651,9 +660,12 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defun kill (monster world)
   (let ((coords (car (rassoc monster (monsters world)))))
-   (remove-monster monster world)
-   (push (make-death-anim (car coords) (cadr coords))
-	 (active-animations *game*))))
+    (unless (and (car coords) (cadr coords))
+      (print monster)
+      (print (monsters world)))
+    (remove-monster monster world)
+    (push (make-death-anim (car coords) (cadr coords))
+	  (active-animations *game*))))
 
 (defun grab (world x y)
   (let ((cell (world-at world x y))
@@ -895,5 +907,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
     (sdl:enable-key-repeat 300 100)
     (setf *skull* (sdl:load-image "death.bmp")
-	  *bash* (sdl:load-image "hit.bmp"))
+	  *bash* (sdl:load-image "hit.bmp")
+	  *heart* (sdl:load-image "heart.bmp"))
     (game-loop)))
