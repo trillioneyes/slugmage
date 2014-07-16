@@ -181,9 +181,9 @@ arguments (x y button)")
 
 (defun draw-animation (anim surface)
   (let ((player-offset
-	 (list
-	  (- (/ 400 *tile-size*) (caar (player (world *game*))))
-	  (- (/ 300 *tile-size*) (cadar (player (world *game*)))))))
+	 (coord
+	  (- (/ 400 *tile-size*) (x (player (world *game*))))
+	  (- (/ 300 *tile-size*) (y (player (world *game*)))))))
     (funcall (draw-fn anim) (age-turns anim) (age-frames anim) surface player-offset)))
 (defun expired? (anim)
   (with-slots (frames age-frames turns age-turns) anim
@@ -216,8 +216,16 @@ arguments (x y button)")
   (make-instance 'world :monsters (append monsters (monsters world))
 		 :player (player world) :walls (walls world)))
 
+(defclass coord ()
+  ((x :accessor x :initarg :x)
+   (y :accessor y :initarg :y)))
+(defun coord (x y) (make-instance 'coord :x x :y y))
+
 (defclass monster ()
-  ((mana :accessor mana
+  ((pos :accessor pos
+	:initarg :pos
+	:type coord)
+   (mana :accessor mana
 	 :initform 1
 	 :initarg :mana)
    (weight :accessor weight
@@ -226,6 +234,8 @@ arguments (x y button)")
    (daughters :accessor daughters
 	      :initarg :daughters
 	      :initform nil)))
+(defmethod x ((thing monster)) (x (pos thing)))
+(defmethod y ((thing monster)) (y (pos thing)))
 
 (defclass player (monster)
   ((inventory :accessor inventory
@@ -239,7 +249,7 @@ arguments (x y button)")
 	      :initarg :home-font
 	      :initform nil)
    (target :accessor target
-	   :initform (list (random 60) (random 60)))
+	   :initform (coord (random 60) (random 60)))
    (food :accessor food
 	 :initform 50
 	 :initarg :food)
@@ -311,17 +321,21 @@ arguments (x y button)")
   (loop for dx from (- dist) upto dist append
        (loop for dy from (- dist) upto dist
 	  when (not (and (= dx 0) (= dy 0)))
-	  when (typep (item-at world (+ (car spot) dx) (+ (cadr spot) dy))
+	  when (typep (item-at world (+ (x spot) dx) (+ (y spot) dy))
 		      filter-type)
-	  collect (item-at world (+ (car spot) dx) (+ (cadr spot) dy)))))
+	  collect (item-at world (+ (x spot) dx) (+ (y spot) dy)))))
 (defun population (&rest args)
   (length (apply 'neighbors args)))
+(defun density (&rest args)
+  (destructuring-bind (spot world &key (dist 1) &allow-other-keys) args
+    (declare (ignore spot world))
+    (/ (apply 'population args) (* 2 dist 2 dist))))
 
-(defun sanitize-daughters (cell)
-  (destructuring-bind ((x y) . mother) cell
-    (prog1 (mapcar (lambda (d) (cons (list x y) d))
-		   (daughters mother))
-      (setf (daughters mother) nil))))
+(defun sanitize-daughters (mother)
+  (prog1 (daughters mother)
+    (dolist (d (daughters mother))
+      (setf (pos d) (pos mother)))
+    (setf (daughters mother) nil)))
 
 (defun birth-all (world)
   (setf (monsters world) 
@@ -336,12 +350,12 @@ arguments (x y button)")
     (setf (active-animations *game*)
 	  (remove-if 'expired? (active-animations *game*)))
     (dolist (anim (active-animations *game*))
-      (incf (age-turns anim)))
+      (and (age-turns anim) (incf (age-turns anim))))
     (setf (status *game*) :playing)))
 
 (defun distance (p1 p2)
-  (destructuring-bind (x1 y1) p1
-    (destructuring-bind (x2 y2) p2
+  (with-slots ((x1 x) (y1 y)) p1
+    (with-slots ((x2 x) (y2 y)) p2
       (sqrt (+ (expt (- x1 x2) 2) (expt (- y1 y2) 2))))))
 
 (defgeneric cast-spell (spell spot))
@@ -372,18 +386,16 @@ arguments (x y button)")
   (maplist (lambda (cells)
 	     (if (car cells)
 		 (setf (car cells)
-		       (take-turn (cdar cells) (caar cells) world))))
+		       (take-turn (car cells) world))))
 	   (monsters world))
   (setf (monsters world)
-	(remove-if-not #'cdr (monsters world))))
+	(remove nil (monsters world))))
 
 
 (defgeneric mate (slug1 slug2))
 (defmethod mate ((slug1 slug) (slug2 slug))
-  (let ((coord1 (car (rassoc slug1 (monsters *world*))))
-	 (coord2 (car (rassoc slug2 (monsters *world*)))))
-    (push (make-mate-anim (first coord1) (second coord1)) (active-animations *game*))
-    (push (make-mate-anim (first coord2) (second coord2)) (active-animations *game*)))
+  (push (make-mate-anim (pos slug1)) (active-animations *game*))
+  (push (make-mate-anim (pos slug2)) (active-animations *game*))
   (with-slots (mana weapon max-life social home-font) slug1
     (with-slots (weight armor grazing hunting aggression) slug2
       (let ((tolerance 5))
@@ -431,12 +443,10 @@ arguments (x y button)")
 	((< (life slug2) 1 (life slug1))
 	 (eat slug1 slug2 world))
 	(t
-	 (let ((coords1 (car (rassoc slug1 (monsters world))))
-	       (coords2 (car (rassoc slug2 (monsters world)))))
-	   (push (make-bash-anim (car coords1) (cadr coords1))
-		 (active-animations *game*))
-	   (push (make-bash-anim (car coords2) (cadr coords2))
-		 (active-animations *game*))))))
+	 (push (make-bash-anim (pos slug1))
+	       (active-animations *game*))
+	 (push (make-bash-anim (pos slug2))
+	       (active-animations *game*)))))
 
 
 ;;; Used in take-turn for slugs
@@ -449,38 +459,39 @@ arguments (x y button)")
 			(population coords world :dist 5 :filter-type 'slug-font)))))))
 (defun set-explore-target (monster coords world)
   (loop while (prob (population (target monster) world :dist 5) 2) do
-    (destructuring-bind (x y) coords
-      (setf (target monster)
-	    (list (+ x (random-delta 100))
-		  (+ y (random-delta 100)))))))
+	(setf (target monster)
+	      (coord (+ (x coords) (random-delta 100))
+		     (+ (y coords) (random-delta 100))))))
 
-(defgeneric take-turn (monster coords world))
+(defgeneric take-turn (monster world))
 
-(defmethod take-turn ((monster slug-font) coords world)
-  (if (one-in (+ 15 (population coords world)))
-      (let ((spawn (mutate monster)))
-	(setf (home-font spawn) monster)
-	(push spawn (daughters monster))))
-  (if (< (life monster) (max-life monster))
-      (incf (life monster)))
-  (cons coords monster))
+(defmethod take-turn ((monster slug-font) world)
+  (let ((coords (pos monster)))
+    (if (one-in (+ 15 (population coords world)))
+	(let ((spawn (mutate monster)))
+	  (setf (home-font spawn) monster)
+	  (push spawn (daughters monster))))
+    (if (< (life monster) (max-life monster))
+	(incf (life monster))))
+  monster)
 
-(defmethod take-turn ((monster slug) coords world)
-  (with-slots (aggression home-font target food mana weight grazing max-life social)
+(defmethod take-turn ((monster slug)  world)
+  (with-slots (aggression home-font target food mana weight grazing max-life social (coords pos))
       monster
     (unless (member home-font (monsters world) :test #'equal)
       (setf home-font (find-home-font world monster)))
     (if (one-in 15)
 	(if (prob (population coords world :dist 5) 2)
 	    (set-explore-target monster coords world)
-	    (setf target (car (find-target world)))))
-    (if (and home-font (< food 15)) (setf target (car home-font))
+	  (setf target (find-target world))))
+    (if (and home-font (< food 15)) (setf target (pos home-font))
 	(dolist (other (neighbors coords world))
 	  (cond ((prob aggression 15) 
 		 (fight monster other world))
-		((prob (- social (population coords world :dist 5)) 15)
+		((and (prob social 15)
+		      (one-in (population coords world :dist 5)))
 		 (push (mate monster other) (daughters monster))))))
-    (if (or (not home-font) (> (distance coords (car home-font)) 8))
+    (if (or (not home-font) (> (distance coords (pos home-font)) 8))
 	(decf food (ceiling (sqrt (/ (trait-sum monster) 10))))
 	(incf food (ceiling (/ grazing 5))))
     (unless (> (life monster) max-life)
@@ -489,31 +500,35 @@ arguments (x y button)")
     (cond
      ((transform? monster coords world)
       (change-class monster 'slug-font)
-      (cons coords monster))
-     ((> food 0)
-      (walk-toward (cons coords monster) target world))
+      monster)
+     ((and (> (life monster) 0) (> food 0))
+      (walk-toward monster target world))
 					; nil return value says to delete this monster
-     (t (kill monster world)))))
+     (t (kill monster world)
+	nil))))
 
 
 (defgeneric find-home-font (world slug))
 (defmethod find-home-font ((world world) (slug slug))
   (let* ((fonts (remove-if-not (lambda (x) (typep x 'slug-font))
-			       (mapcar #'cdr (monsters world))))
+			       (monsters world)))
 	 (scores (mapcar (lambda (x) (color-dist slug x)) fonts))
 	 (best (if scores (apply #'min scores)))
 	 (favorite-font (cdr (assoc best (pairlis scores fonts)))))
-    (rassoc favorite-font (monsters world))))
+    favorite-font))
 
 
 (defgeneric draw (object x y window))
 
 (defmethod draw ((object world) x0 y0 window)
-  (dolist (cell (monsters object))
-    (destructuring-bind ((x y) . monster) cell
+  (dolist (monster (monsters object))
+    (let ((x (x monster))
+	  (y (y monster))) 
       (draw monster (+ x0 x) (+ y0 y) window))) 
   (if (player object)
-      (destructuring-bind ((x y) . player) (player object)
+      (let* ((player (player object))
+	     (x (x player))
+	     (y (y player)))
 	(draw player (+ x0 x) (+ y0 y) window))))
 
 
@@ -533,31 +548,32 @@ arguments (x y button)")
 		       (+ radius (* *tile-size* y))
 		       radius :surface window :color sdl:*white*)))
 
-(defun blink-image (x y period image)
+(defun blink-image (coord period image)
   "Returns a function suitable for use as the draw-fn of an animation.
 x and y are the coordinates to draw to. period is the length of one full blink-on, blink-off cycle in frames."
-  (unless (and x y)
-    (print (monsters *world*))
-    (error "Here we go! The bug is here! Backtrace! o.o"))
-  (lambda (turns frames surface player-offset)
-    (declare (ignore turns))
-    (let* ((px (car player-offset))
-	   (py (cadr player-offset))
-	   (x1 (+ x px))
-	   (y1 (+ y py)))
-      (if (< 0 (mod frames period) (ceiling (/ period 2)))
-	  (sdl:draw-surface-at-* image (* x1 *tile-size*)
-			             (* y1 *tile-size*)
-			       :surface surface)))))
+  (with-slots (x y) coord
+   (unless (and x y)
+     (print (monsters *world*))
+     (error "Here we go! The bug is here! Backtrace! o.o"))
+   (lambda (turns frames surface player-offset)
+     (declare (ignore turns))
+     (let* ((px (x player-offset))
+	    (py (y player-offset))
+	    (x1 (+ x px))
+	    (y1 (+ y py)))
+       (if (< 0 (mod frames period) (ceiling (/ period 2)))
+	   (sdl:draw-surface-at-* image (* x1 *tile-size*)
+				  (* y1 *tile-size*)
+				  :surface surface))))))
 
-(defun make-death-anim (x y)
-  (make-instance 'animation :draw-fn (blink-image x y 15 *skull*)
+(defun make-death-anim (coord)
+  (make-instance 'animation :draw-fn (blink-image coord 15 *skull*)
 		 :turns 2 :frames 60))
-(defun make-bash-anim (x y)
-  (make-instance 'animation :draw-fn (blink-image x y 15 *bash*)
+(defun make-bash-anim (coord)
+  (make-instance 'animation :draw-fn (blink-image coord 15 *bash*)
 		 :turns 2 :frames 60))
-(defun make-mate-anim (x y)
-  (make-instance 'animation :draw-fn (blink-image x y 15 *heart*)
+(defun make-mate-anim (coord)
+  (make-instance 'animation :draw-fn (blink-image coord 15 *heart*)
 		 :turns 2 :frames 60))
 
 (defmethod draw ((object slug-font) x y window)
@@ -594,11 +610,13 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 
 (defgeneric move (object dx dy))
-(defmethod move ((object list) dx dy)
-  (destructuring-bind ((x y) . monster) object
-    (list* (list (+ x dx) (+ y dy)) monster)))
-(defmethod move :before ((object list) dx dy)
-  (if (typep (cdr object) 'player) (setf (status *game*) :end-turn)))
+(defmethod move ((monster monster) dx dy)
+  (setf (pos monster) (move (pos monster) dx dy))
+  monster)
+(defmethod move ((pos coord) dx dy)
+  (coord (+ dx (x pos)) (+ dy (y pos))))
+(defmethod move :before ((object player) dx dy)
+  (setf (status *game*) :end-turn))
 
 
 (defgeneric random-move (monster world coord))
@@ -615,22 +633,22 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 			   (destructuring-bind ((x y) dx dy) (cons coord dir)
 			     (not (world-at world (+ x dx) (+ y dy)))))
 			 directions))))
-       (move (cons coord monster) dx dy)))))
+       (move monster dx dy)))))
 
-(defmethod random-move ((cell list) world coord)
-  (random-move (cdr cell) world coord))
+(defmethod random-move ((cell monster) world coord)
+  (random-move cell world coord))
 
 (defgeneric walk-toward (monster spot world))
-(defmethod walk-toward ((monster list) spot world)
-  (destructuring-bind ((x y) . _) monster
-    (declare (ignore _))
+(defmethod walk-toward ((monster monster) spot world)
+  (let ((x (x monster))
+	(y (y monster)))
     (destructuring-bind (dx dy)
-	(list (cond ((< x (car spot))  1)
-		    ((> x (car spot)) -1)
-		    (t                 0))
-	      (cond ((< y (cadr spot))  1)
-		    ((> y (cadr spot)) -1)
-		    (t                  0)))
+	(list (cond ((< x (x spot))  1)
+		    ((> x (x spot)) -1)
+		    (t               0))
+	      (cond ((< y (y spot))  1)
+		    ((> y (y spot)) -1)
+		    (t                0)))
       (if (world-at world (+ x dx) (+ y dy))
 	  (random-move monster world (list x y))
 	  (move monster dx dy)))))
@@ -639,62 +657,59 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defgeneric world-at (world x y))
 (defmethod world-at (world x y)
-  (if (player world)
-      (destructuring-bind ((x1 y1) . player) (player world)
-	(declare (ignore player))
-	(if (and (= x1 x) (= y1 y))
-	    (player world)
-	    (assoc (list x y) (monsters world) :test #'equal)))
-      (assoc (list x y) (monsters world) :test #'equal)))
+  (if (and (player world) (= x (x (player world))) (= y (y (player world))))
+      (player world)
+      (find-if (lambda (slug) (and (= (x slug) x) (= (y slug) y)))
+	       (monsters world))))
 
 (defgeneric item-at (world x y))
 (defmethod item-at (world x y)
-  (cdr (world-at world x y)))
+  ;; These used to have slightly different behavior. item-at is no longer
+  ;; useful.
+  (world-at world x y))
 
 
 (defun remove-monster (monster world)
   (setf (monsters world)
-	(remove-if (lambda (cell) (equal (cdr cell) monster))
-		   (monsters world))))
+	(remove monster (monsters world))))
 
 
 (defun kill (monster world)
-  (let ((coords (car (rassoc monster (monsters world)))))
-    (unless (and (car coords) (cadr coords))
+  (let ((coords (pos monster)))
+    (unless (and (x coords) (y coords))
       (print monster)
       (print (monsters world)))
     (remove-monster monster world)
-    (push (make-death-anim (car coords) (cadr coords))
+    (push (make-death-anim coords)
 	  (active-animations *game*))))
 
 (defun grab (world x y)
-  (let ((cell (world-at world x y))
-	(item (item-at world x y)))
-    (when (and item (< (+ (inv-weight (cdr (player world)))
+  (let ((item (item-at world x y)))
+    (when (and item (< (+ (inv-weight (player world))
 			  (weight item))
-		       (weight (cdr (player world)))))
-      (push item (inventory (cdr (player world))))
-      (remove-monster (cdr cell) world))))
+		       (weight (player world))))
+      (push item (inventory (player world)))
+      (remove-monster item world))))
 
 (defun inv-weight (player)
   (reduce #'+ (mapcar #'weight (inventory player))))
 
 
 (defun drop (obj world)
-  (push obj (daughters (cdr (player world))))
-  (setf (inventory (cdr (player world))) 
-	(delete obj (inventory (cdr (player world))))))
+  (push obj (daughters (player world)))
+  (setf (inventory (player world)) 
+	(delete obj (inventory (player world)))))
 
 
 
 (defun draw-game (window) 
   (draw (world *game*) 
-	(- (/ 400 *tile-size*) (caar (player (world *game*))))
-	(- (/ 300 *tile-size*) (cadar (player (world *game*)))) 
+	(- (/ 400 *tile-size*) (x (player (world *game*))))
+	(- (/ 300 *tile-size*) (y (player (world *game*)))) 
 	window)
   (dolist (anim (active-animations *game*))
     (unless (expired? anim) (draw-animation anim window))
-    (incf (age-frames anim))))
+    (and (age-frames anim) (incf (age-frames anim)))))
 
 (defun mod* (num divisor)
   (let ((x (mod num divisor)))
@@ -754,15 +769,17 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun inventory-world (list w h)
   (if list
       (apply #'register (make-instance 'world)
-	     (loop for i upto (* w h) for slug in list collect
-		  (cons (multiple-value-list (mod* i (/ w *tile-size*)))
-			slug)))
+	     (loop for i upto (* w h) for slug in list do
+		   (setf (pos slug)
+			 (multiple-value-call
+			  #'coord (mod* i (/ w *tile-size*))))
+		   collect slug))
       (make-instance 'world)))
 
  (defun draw-inventory (window x y w h)
   (let ((inventory-surface (sdl:create-surface w h))
 	(inventory (inventory-world 
-		    (reverse (inventory (cdr (player (world *game*)))))
+		    (reverse (inventory (player (world *game*))))
 				    w h)))
     (draw inventory 0 0 inventory-surface)
     (sdl:draw-surface-at-* inventory-surface x y :surface window)))
@@ -770,12 +787,13 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun draw-spells (window x y w h)
   (let ((surface (sdl:create-surface w (+ 19 h))))
     (sdl:draw-string-solid-* (format nil "M:~3d"
-				     (mana (cdr (player (world *game*)))))
+				     (mana (player (world *game*))))
 			     0 (+ 1 h) :surface surface)
     (sdl:draw-string-solid-* (format nil "W:~3d"
-				     (inv-weight (cdr (player (world *game*)))))
+				     (inv-weight (player (world *game*))))
 			   0 (+ 1 h h) :surface surface)
-    (draw (inventory-world *spells* 40 10) 0 0 surface)
+    (loop for spell in *spells* for x0 from 0 do
+	  (draw spell x0 0 surface))
     (sdl:draw-surface-at-* surface x y :surface window)))
 
 (defun draw-ui (window)
@@ -805,23 +823,24 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defun inv-at-cursor (x y)
   (at-cursor (inventory-world 
-	      (reverse (inventory (cdr (player (world *game*))))) 80 40)
+	      (reverse (inventory (player (world *game*)))) 80 40)
 	     (- x (ui-border *game*))
 	     (- y (ui-border *game*) (ui-top *game*))
 	     0 0))
 
 (defun spell-at-cursor (x y)
-  (at-cursor (inventory-world *spells* 40 10)
-	     (- x (ui-border *game*) 80 (ui-border *game*))
-	     (- y (ui-border *game*) (ui-top *game*))
-	     0 0))
+  (let ((spell-top (+ (ui-border *game*) (ui-top *game*)))
+	(spell-left (+ 80 (* 2 (ui-border *game*)))))
+   (and (< spell-top y (+ spell-top *tile-size*))
+	(< spell-left x)
+	(nth (floor (/ (- x spell-left) *tile-size*)) *spells*))))
 
 (defun eat-slug (x y)
   (let ((slug (inv-at-cursor x y)))
     (when slug
-      (incf (mana (cdr (player (world *game*)))) (mana slug))
-      (setf (inventory (cdr (player (world *game*))))
-	    (delete slug (inventory (cdr (player (world *game*)))))))))
+      (incf (mana (player (world *game*))) (mana slug))
+      (setf (inventory (player (world *game*)))
+	    (delete slug (inventory (player (world *game*))))))))
 
 (defun win-message (x y window)
   (let ((h (+ 1 (sdl:char-height sdl:*default-font*))))
@@ -835,16 +854,17 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
       ((:playing (*key-down-hooks*
 		  (if (eq key :sdl-key-escape) (setf (status *game*) :end-turn))
 		  (when (directional key)
-		    (setf (player (world *game*))
-			  (destructuring-bind (x y) (get key 'direction)
-			    (move (player (world *game*)) x y))))
+		    (destructuring-bind (x y) (get key 'direction)
+		      (move (player (world *game*)) x y)))
 		  (when (eq key :sdl-key-g)
 		    (setf (status *game*) :grab)
 		    (key-down-hook
-		      (when (directional key) (let ((key* key))
-			 (destructuring-bind (x y) (car (player (world *game*))) 
-			   (destructuring-bind (x1 y1) (get key* 'direction)
-			     (grab (world *game*) (+ x x1) (+ y y1))))))
+		      (when (directional key)
+			(let ((key* key))
+			  (let ((x (x (player *world*)))
+				(y (y (player *world*)))) 
+			    (destructuring-bind (x1 y1) (get key* 'direction)
+			      (grab (world *game*) (+ x x1) (+ y y1))))))
 		      (setf *key-down-hooks* nil)
 		      (setf (status *game*) :end-turn)))
 		  (when (eq key :sdl-key-t) (setf (status *game*) :drop))
@@ -861,14 +881,14 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 		      (eat-slug x y)
 		      (let ((spell (spell-at-cursor x y)))
 			(when (and spell (<= (get spell 'mana)
-					     (mana (cdr (player (world *game*))))))
+					     (mana (player (world *game*)))))
 			  (setf (active-spell *game*) spell
 				(status *game*) :cast)))))))
        (:cast (*mouse-button-down-hooks*
 	       (if button 
 		   (cast-spell (active-spell *game*)
-			       (destructuring-bind (x0 y0) 
-				   (car (player (world *game*)))
+			       (let ((x0 (x (player *world*)))
+				     (y0 (y (player *world*)))) 
 				 (list (- (floor (/ x *tile-size*)) 40 (- x0))
 				       (- (floor (/ y *tile-size*)) 30 (- y0))))))
 	       (progn x y button 
@@ -882,12 +902,13 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 		      (draw-ui sdl:*default-display*)
 		      (play-one-round)))
 	   (if (eq (status *game*) :playing) 
-	       (setf (mana (cdr (player (world *game*))))
+	       (setf (mana (player (world *game*)))
 		     0)))
     (:mouse-motion-event (:x x :y y)
       (setf (selected-slug *game*) 
 	    (cond ((< y (ui-top *game*))
-		   (destructuring-bind (x0 y0) (car (player (world *game*)))
+		   (let ((x0 (x (player *world*)))
+			 (y0 (y (player *world*)))) 
 		     (at-cursor (world *game*) x y (- x0 40) (- y0 30))))
 		  ((< x (+ (ui-border *game*) 80))
 		   (inv-at-cursor x y))
@@ -896,12 +917,13 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun main ()
   (setf *random-state* (make-random-state t))
   (setf *world*
-	(register (make-instance 'world :player `((8 12) .
-						  ,(make-instance 'player
-								  :weight 30))) 
-		  (list* '(-5 -5) (make-instance 'slug-font))
-		  (list* '(30 25) (make-instance 'slug-font))
-		  (list* '(-13 29) (make-instance 'slug-font))))
+	(register
+	 (make-instance 'world :player (make-instance 'player
+					       :weight 30
+					       :pos (coord 8 12))) 
+	 (make-instance 'slug-font :pos (coord -5 -5))
+	 (make-instance 'slug-font :pos (coord 30 25))
+	 (make-instance 'slug-font :pos (coord -13 29) :social 100)))
   (setf *game* (make-instance 'game :world *world*))
   (sdl:with-init ()
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
