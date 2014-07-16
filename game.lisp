@@ -541,36 +541,6 @@ arguments (x y button)")
     favorite-font))
 
 
-(defgeneric draw (object x y window))
-
-(defmethod draw ((object world) x0 y0 window)
-  (dolist (monster (monsters object))
-    (let ((x (x monster))
-	  (y (y monster))) 
-      (draw monster (+ x0 x) (+ y0 y) window))) 
-  (if (player object)
-      (let* ((player (player object))
-	     (x (x player))
-	     (y (y player)))
-	(draw player (+ x0 x) (+ y0 y) window))))
-
-
-(defmethod draw ((object player) x y window)
-  (let ((radius (/ *tile-size* 2)))
-    (sdl:draw-filled-circle-* (+ radius (* *tile-size* x))
-			      (+ radius (* *tile-size* y))
-			      radius :surface window :color sdl:*green*)))
-
-(defmethod draw ((object slug) x y window)
-  (let ((radius (/ *tile-size* 2)))
-    (sdl:draw-filled-circle-*
-     (+ radius (* *tile-size* x))
-     (+ radius (* *tile-size* y))
-     radius :surface window :color (color object))
-    (sdl:draw-circle-* (+ radius (* *tile-size* x))
-		       (+ radius (* *tile-size* y))
-		       radius :surface window :color sdl:*white*)))
-
 (defun blink-image (coord period image)
   "Returns a function suitable for use as the draw-fn of an animation.
 x and y are the coordinates to draw to. period is the length of one full blink-on, blink-off cycle in frames."
@@ -641,6 +611,36 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 	while (<= alpha 1)
 	collect (list alpha (* (sqrt alpha) (random-delta 20))
 		            (* (sqrt alpha) (random-delta 20)))))
+
+(defgeneric draw (object x y window))
+
+(defmethod draw ((object world) x0 y0 window)
+  (dolist (monster (monsters object))
+    (let ((x (x monster))
+	  (y (y monster))) 
+      (draw monster (+ x0 x) (+ y0 y) window))) 
+  (if (player object)
+      (let* ((player (player object))
+	     (x (x player))
+	     (y (y player)))
+	(draw player (+ x0 x) (+ y0 y) window))))
+
+
+(defmethod draw ((object player) x y window)
+  (let ((radius (/ *tile-size* 2)))
+    (sdl:draw-filled-circle-* (+ radius (* *tile-size* x))
+			      (+ radius (* *tile-size* y))
+			      radius :surface window :color sdl:*green*)))
+
+(defmethod draw ((object slug) x y window)
+  (let ((radius (/ *tile-size* 2)))
+    (sdl:draw-filled-circle-*
+     (+ radius (* *tile-size* x))
+     (+ radius (* *tile-size* y))
+     radius :surface window :color (color object))
+    (sdl:draw-circle-* (+ radius (* *tile-size* x))
+		       (+ radius (* *tile-size* y))
+		       radius :surface window :color sdl:*white*)))
 
 (defmethod draw ((object slug-font) x y window)
   (sdl:draw-box-* (* *tile-size* x)
@@ -763,15 +763,15 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defun drop (obj world)
   (push obj (daughters (player world)))
-  (setf (inventory (player world)) 
+  (setf (inventory (player world))
 	(delete obj (inventory (player world)))))
 
 
 
-(defun draw-game (window) 
-  (draw (world *game*) 
+(defun draw-game (window)
+  (draw (world *game*)
 	(- (/ 400 *tile-size*) (x (player (world *game*))))
-	(- (/ 300 *tile-size*) (y (player (world *game*)))) 
+	(- (/ 300 *tile-size*) (y (player (world *game*))))
 	window)
   (dolist (anim (active-animations *game*))
     (unless (expired? anim) (draw-animation anim window))
@@ -790,7 +790,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 				 sdl:*black*
 				 sdl:*white*)))
     (labels ((att-name (att)
-	       (concatenate 
+	       (concatenate
 		'string
 		(case att
 		  (weapon "ATTK")
@@ -800,11 +800,11 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 		  (social "SOCL")
 		  (armor "ARMR")
 		  (t (subseq (symbol-name att) 0 4)))
-		":~2d")) 
+		":~2d"))
 	     (print-att (att column row)
-	       (sdl:draw-string-solid-* 
+	       (sdl:draw-string-solid-*
 		(format nil (att-name att) (funcall att slug))
-		(* column (* 7 (+ 1 width))) (+ 2 (* row (+ 1 height))) 
+		(* column (* 7 (+ 1 width))) (+ 2 (* row (+ 1 height)))
 		:surface surface)))
       (sdl:clear-display (color slug) :surface surface)
       (sdl:draw-string-solid-*
@@ -844,7 +844,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
  (defun draw-inventory (window x y w h)
   (let ((inventory-surface (sdl:create-surface w h))
-	(inventory (inventory-world 
+	(inventory (inventory-world
 		    (reverse (inventory (player (world *game*))))
 				    w h)))
     (draw inventory 0 0 inventory-surface)
@@ -869,7 +869,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 		    :color (sdl:color :r 25 :g 25 :b 255))
 
     (draw-inventory window border (+ top border) 80 40)
-    
+   
     (draw-spells window (+ border 80 border) (+ top border)
 		 40 10)
 
@@ -884,11 +884,11 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defun at-cursor (world x y x0 y0)
   (let ((x (+ (floor (/ x *tile-size*)) x0))
-	(y (+ (floor (/ y *tile-size*)) y0))) 
+	(y (+ (floor (/ y *tile-size*)) y0)))
     (item-at world x y)))
 
 (defun inv-at-cursor (x y)
-  (at-cursor (inventory-world 
+  (at-cursor (inventory-world
 	      (reverse (inventory (player (world *game*)))) 80 40)
 	     (- x (ui-border *game*))
 	     (- y (ui-border *game*) (ui-top *game*))
@@ -928,7 +928,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 		      (when (directional key)
 			(let ((key* key))
 			  (let ((x (x (player *world*)))
-				(y (y (player *world*)))) 
+				(y (y (player *world*))))
 			    (destructuring-bind (x1 y1) (get key* 'direction)
 			      (grab (world *game*) (+ x x1) (+ y y1))))))
 		      (setf *key-down-hooks* nil)
@@ -951,30 +951,30 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 			  (setf (active-spell *game*) spell
 				(status *game*) :cast)))))))
        (:cast (*mouse-button-down-hooks*
-	       (if button 
+	       (if button
 		   (cast-spell (active-spell *game*)
 			       (let ((x0 (x (player *world*)))
-				     (y0 (y (player *world*)))) 
+				     (y0 (y (player *world*))))
 				 (list (- (floor (/ x *tile-size*)) 40 (- x0))
 				       (- (floor (/ y *tile-size*)) 30 (- y0))))))
-	       (progn x y button 
+	       (progn x y button
 		      (unless (eq (active-spell *game*) :dawn)
 			(setf (status *game*) :end-turn))))))
-    (:idle () 
+    (:idle ()
 	   (sdl:clear-display sdl:*black*) ; later make it clear with the map
 	   (if (eq (status *game*) :win)
 	       (win-message 280 100 sdl:*default-display*)
 	       (progn (draw-game sdl:*default-display*)
 		      (draw-ui sdl:*default-display*)
 		      (play-one-round)))
-	   (if (eq (status *game*) :playing) 
+	   (if (eq (status *game*) :playing)
 	       (setf (mana (player (world *game*)))
 		     0)))
     (:mouse-motion-event (:x x :y y)
-      (setf (selected-slug *game*) 
+      (setf (selected-slug *game*)
 	    (cond ((< y (ui-top *game*))
 		   (let ((x0 (x (player *world*)))
-			 (y0 (y (player *world*)))) 
+			 (y0 (y (player *world*))))
 		     (at-cursor (world *game*) x y (- x0 40) (- y0 30))))
 		  ((< x (+ (ui-border *game*) 80))
 		   (inv-at-cursor x y))
@@ -986,7 +986,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 	(register
 	 (make-instance 'world :player (make-instance 'player
 					       :weight 30
-					       :pos (coord 8 12))) 
+					       :pos (coord 8 12)))
 	 (make-instance 'slug-font :pos (coord -5 -5))
 	 (make-instance 'slug-font :pos (coord 30 25))
 	 (make-instance 'slug-font :pos (coord -13 29) :social 100)))
