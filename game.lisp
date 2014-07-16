@@ -374,6 +374,9 @@ arguments (x y button)")
 (defmethod cast-spell ((spell (eql :hand)) spot)
   (declare (ignore spell))
   (destructuring-bind (x y) spot
+    (if (item-at *world* x y)
+	(push (make-grab-anim (item-at *world* x y) (pos (player *world*)) 60)
+	      (active-animations *game*)))
     (grab (world *game*) x y)))
 
 (defmethod cast-spell ((spell (eql :dawn)) spot)
@@ -575,6 +578,22 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun make-mate-anim (coord)
   (make-instance 'animation :draw-fn (blink-image coord 15 *heart*)
 		 :turns 2 :frames 60))
+
+(defun make-grab-anim (slug player-pos flight-time)
+  (let ((player-x (x player-pos))
+	(player-y (y player-pos))
+	(slug-x (x slug))
+	(slug-y (y slug)))
+    (labels ((lerp-x (alpha) (floor (+ slug-x (* (- player-x slug-x) (/ alpha flight-time)))))
+	     (lerp-y (alpha) (floor (+ slug-y (* (- player-y slug-y) (/ alpha flight-time))))))
+      (make-instance 'animation :frames flight-time :turns 2
+		     :draw-fn
+		     (lambda (turns frames surface player-offset)
+		       (declare (ignore turns)) 
+		       (draw slug
+			     (+ (lerp-x frames) (x player-offset))
+			     (+ (lerp-y frames) (y player-offset))
+			     surface))))))
 
 (defmethod draw ((object slug-font) x y window)
   (sdl:draw-box-* (* *tile-size* x)
