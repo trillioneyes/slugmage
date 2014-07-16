@@ -63,6 +63,19 @@ arguments (x y button)")
 (defun prob (x &optional (penalty 10))
   (and (> x 0) (< (random (+ x penalty)) x)))
 
+
+(defgeneric lerp (start end alpha))
+(defmethod lerp ((start number) (end number) (alpha number))
+  (+ start (* alpha (- end start))))
+
+(defgeneric snap (value))
+(defmethod snap ((val number)) (round val))
+
+(defgeneric scale (factor value))
+(defmethod scale ((factor number) (value number)) (* factor value))
+
+(defun v+ (v1 v2) (coord (+ (x v1) (x v2)) (+ (y v1) (y v2))))
+
 (defun directional (key) (member key *directions*))
 (setf (get :sdl-key-a 'direction) (list -1 0)
       (get :sdl-key-s 'direction) (list 0 0)
@@ -220,6 +233,11 @@ arguments (x y button)")
   ((x :accessor x :initarg :x)
    (y :accessor y :initarg :y)))
 (defun coord (x y) (make-instance 'coord :x x :y y))
+(defmethod lerp ((start coord) (end coord) (alpha number))
+  (coord (lerp (x start) (x end) alpha) (lerp (y start) (y end) alpha)))
+(defmethod snap ((val coord)) (coord (snap (x val)) (snap (y val))))
+(defmethod scale ((factor number) (val coord))
+  (coord (* factor (x val)) (* factor (y val))))
 
 (defclass monster ()
   ((pos :accessor pos
@@ -369,7 +387,9 @@ arguments (x y button)")
 (defmethod cast-spell ((spell (eql :lightning)) spot)
   (declare (ignore spell))
   (destructuring-bind (x y) spot
-    (kill (world-at (world *game*) x y) (world *game*))))
+    (push (make-zap-anim (pos (player *world*)) (coord x y)) (active-animations *game*))
+    (if (world-at *world* x y)
+	(kill (world-at (world *game*) x y) (world *game*)))))
 
 (defmethod cast-spell ((spell (eql :hand)) spot)
   (declare (ignore spell))
@@ -584,16 +604,40 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 	(player-y (y player-pos))
 	(slug-x (x slug))
 	(slug-y (y slug)))
-    (labels ((lerp-x (alpha) (floor (+ slug-x (* (- player-x slug-x) (/ alpha flight-time)))))
-	     (lerp-y (alpha) (floor (+ slug-y (* (- player-y slug-y) (/ alpha flight-time))))))
-      (make-instance 'animation :frames flight-time :turns 2
-		     :draw-fn
-		     (lambda (turns frames surface player-offset)
-		       (declare (ignore turns)) 
-		       (draw slug
-			     (+ (lerp-x frames) (x player-offset))
-			     (+ (lerp-y frames) (y player-offset))
-			     surface))))))
+    (make-instance 'animation :frames flight-time :turns 2
+		   :draw-fn
+		   (lambda (turns frames surface player-offset)
+		     (declare (ignore turns)) 
+		     (draw slug
+			   (+ (round (lerp slug-x player-x (/ frames flight-time))) (x player-offset))
+			   (+ (round (lerp slug-y player-y (/ frames flight-time))) (y player-offset))
+			   surface)))))
+
+(defun make-zap-anim (start-pos end-pos)
+  (let ((paths (loop repeat 3 collect (random-lightning-path))))
+   (make-instance 'animation :frames 40 :turns 2 :draw-fn
+		  (lambda (turns frames surface player-offset)
+		    (declare (ignore turns))
+		    (dolist (path paths)
+		      (draw-lightning-path (scale *tile-size* (v+ start-pos player-offset))
+					   (scale *tile-size* (v+ end-pos player-offset))
+					   path surface sdl:*white*))
+		    (if (= (mod frames 5) 0)
+			(progn (setf (car paths) (random-lightning-path))
+			       (rotatef (car paths) (cadr paths) (caddr paths))))))))
+
+(defun draw-lightning-path (start end offsets surface color)
+  "Takes a start coord, an end coord, and a list of (alpha off-x off-y) triples, and draws a zigzag path according to them."
+  (loop for (alpha off-x off-y) in offsets with endpoint = start with nextpoint do
+	(setf nextpoint (snap (move (lerp start end alpha) off-x off-y)))
+	(sdl:draw-line-* (x endpoint)  (y endpoint)
+			 (x nextpoint) (y nextpoint) 
+			 :surface surface :color color)
+	(setf endpoint nextpoint)))
+(defun random-lightning-path ()
+  (loop for alpha = 0 then (+ alpha (/ (random 10) 30))
+	while (<= alpha 1)
+	collect (list alpha (random-delta 20) (random-delta 20))))
 
 (defmethod draw ((object slug-font) x y window)
   (sdl:draw-box-* (* *tile-size* x)
