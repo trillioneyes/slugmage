@@ -616,15 +616,17 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun make-zap-anim (start-pos end-pos)
   (let ((paths (loop repeat 3 collect (random-lightning-path))))
    (make-instance 'animation :frames 40 :turns 2 :draw-fn
-		  (lambda (turns frames surface player-offset)
-		    (declare (ignore turns))
-		    (dolist (path paths)
-		      (draw-lightning-path (scale *tile-size* (v+ start-pos player-offset))
-					   (scale *tile-size* (v+ end-pos player-offset))
-					   path surface sdl:*white*))
-		    (if (= (mod frames 5) 0)
-			(progn (setf (car paths) (random-lightning-path))
-			       (rotatef (car paths) (cadr paths) (caddr paths))))))))
+    (lambda (turns frames surface player-offset)
+      (declare (ignore turns))
+      (dolist (path paths)
+	(draw-lightning-path (scale *tile-size*
+				    (move (v+ start-pos player-offset) 1/2 1/2))
+			     (scale *tile-size*
+				    (move (v+ end-pos player-offset) 1/2 1/2))
+			     path surface sdl:*white*))
+      (if (= (mod frames 5) 0)
+	  (progn (setf (car paths) (random-lightning-path))
+		 (rotatef (car paths) (cadr paths) (caddr paths))))))))
 
 (defun draw-lightning-path (start end offsets surface color)
   "Takes a start coord, an end coord, and a list of (alpha off-x off-y) triples, and draws a zigzag path according to them."
@@ -637,7 +639,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun random-lightning-path ()
   (loop for alpha = 0 then (+ alpha (/ (random 10) 30))
 	while (<= alpha 1)
-	collect (list alpha (random-delta 20) (random-delta 20))))
+	collect (list alpha (* (sqrt alpha) (random-delta 20))
+		            (* (sqrt alpha) (random-delta 20)))))
 
 (defmethod draw ((object slug-font) x y window)
   (sdl:draw-box-* (* *tile-size* x)
