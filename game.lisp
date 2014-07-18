@@ -17,7 +17,7 @@
 (defparameter *hooks-registry* (make-hash-table)
   "The keys are game statuses (e.g. :playing and :end-turn). The values should be hashes from hook types ('key-up, 'key-down, 'mouse-up, 'mouse-down) to lists of functions.")
 
-(defparameter *spells* (list :lightning :hand :fire :dawn))
+(defparameter *spells* '(:lightning :hand :fire :dawn))
 (setf (get :lightning 'mana) 1
       (get :hand 'mana) 5
       (get :fire 'mana) 10
@@ -27,8 +27,12 @@
       (get :hand 'description) "Far grab"
       (get :dawn 'description) "Win")
 
-(defparameter *game-modes* (list :playing :end-turn :grab :menu :magic :drop
-                                 :cast :win))
+(defparameter *game-modes*
+  '(:playing :end-turn :grab :menu :magic :drop :cast :win))
+
+(defparameter *ai-states*
+  '(:hunt :graze :mate :idle ; :explore :herd :flee
+          ))
 
 (dolist (status *game-modes*)
   (setf (gethash status *hooks-registry*) (make-hash-table)))
@@ -62,6 +66,8 @@ arguments (x y button)")
 ;;; vanishing impact for large x.
 (defun prob (x &optional (penalty 10))
   (and (> x 0) (< (random (+ x penalty)) x)))
+(defun random-choice (list)
+  (nth (random (length list)) list))
 
 
 (defgeneric lerp (start end alpha))
@@ -263,11 +269,14 @@ arguments (x y button)")
   ((color :accessor color
           :initarg :color
           :initform nil)
+   (ai-state :accessor ai-state
+             :initarg :ai-state
+             :initform :idle)
    (home-font :accessor home-font
               :initarg :home-font
               :initform nil)
    (target :accessor target
-           :initform (coord (random 60) (random 60)))
+           :initform (coord (random-delta 100) (random-delta 100)))
    (food :accessor food
          :initform 50
          :initarg :food)
@@ -321,6 +330,8 @@ arguments (x y button)")
   "Returns the sum of all traits of a given slug that are unilaterally a good thing."
   (with-slots (hunting grazing weapon armor max-life) slug
     (+ hunting grazing weapon armor max-life)))
+(defun metabolic-cost (slug)
+  (ceiling (sqrt (/ (trait-sum slug) 10))))
 
 
 (defgeneric color-dist (one two))
@@ -371,10 +382,13 @@ arguments (x y button)")
       (and (age-turns anim) (incf (age-turns anim))))
     (setf (status *game*) :playing)))
 
-(defun distance (p1 p2)
+(defgeneric distance (p1 p2))
+(defmethod distance ((p1 coord) (p2 coord))
   (with-slots ((x1 x) (y1 y)) p1
     (with-slots ((x2 x) (y2 y)) p2
       (sqrt (+ (expt (- x1 x2) 2) (expt (- y1 y2) 2))))))
+(defmethod distance ((m1 monster) (m2 monster))
+  (distance (pos m1) (pos m2)))
 
 (defgeneric cast-spell (spell spot))
 
@@ -453,6 +467,11 @@ arguments (x y button)")
 (defmethod mutate ((stat number) &optional (tolerance 20))
   (max 1 (+ stat (random-delta tolerance))))
 
+
+;;; 
+;;; Functions related to slug behavior
+;;; 
+
 (defun eat (slug1 slug2 world)
   (incf (mana slug1) (ceiling (/ (mana slug2) 2)))
   (incf (food slug1) (ceiling (/ (weight slug2) 2)))
@@ -499,36 +518,75 @@ arguments (x y button)")
   monster)
 
 (defmethod take-turn ((monster slug)  world)
-  (with-slots (aggression home-font target food mana weight grazing max-life social (coords pos))
+  (with-slots (aggression home-font target food mana weight k-strat
+               grazing  hunting max-life social ai-state (coords pos))
       monster
     (unless (member home-font (monsters world) :test #'equal)
       (setf home-font (find-home-font world monster)))
-    (if (one-in 15)
-        (if (prob (population coords world :dist 5) 2)
-            (set-explore-target monster coords world)
-          (setf target (find-target world))))
-    (if (and home-font (< food 15)) (setf target (pos home-font))
-        (dolist (other (neighbors coords world))
-          (cond ((prob aggression 15) 
-                 (fight monster other world))
-                ((and (prob social 15)
-                      (one-in (population coords world :dist 5)))
-                 (push (mate monster other) (daughters monster))))))
-    (if (or (not home-font) (> (distance coords (pos home-font)) 8))
-        (decf food (ceiling (sqrt (/ (trait-sum monster) 10))))
-        (incf food (ceiling (/ grazing 5))))
-    (unless (> (life monster) max-life)
+    ;; Act according to current state
+    (ecase ai-state
+      (:idle (idle-behavior monster))
+      (:hunt (hunting-behavior monster))
+      (:graze (grazing-behavior monster))
+      (:mate (mating-behavior monster)))
+    ;; Possibly transition to another state, and set an appropriate
+    ;; target for that state
+    (cond
+     ((and (not (member ai-state '(:hunt :graze)))
+           (< food (* 15 (metabolic-cost monster))))
+      (if (prob grazing hunting)
+          (setf ai-state :graze
+                target   home-font)
+        (setf ai-state :hunt
+              target (random-choice (neighbors coords *world* :dist 25)))))
+     ((and (not (eq ai-state :mate))
+           (> food (* 15 k-strat)))
+      (setf ai-state :mate
+            target (random-choice (neighbors coords *world* :dist 10)))))
+    ;; Metabolism
+    (unless (>= (life monster) max-life)
         (incf (life monster))
         (decf food))
+    (decf food (metabolic-cost monster))
     (cond
      ((transform? monster coords world)
       (change-class monster 'slug-font)
-      monster)
-     ((and (> (life monster) 0) (> food 0))
-      (walk-toward monster target world))
-                                        ; nil return value says to delete this monster
-     (t (kill monster world)
-        nil))))
+      monster) 
+     ;; nil return value says to delete this monster
+     ((or (< (life monster) 0) (< food 0))
+      (kill monster world)
+      nil)
+     (t monster))))
+
+(defun mating-behavior (monster)
+  (cond ((< (distance monster (target monster)) 2)
+         (mate monster (target monster)))
+        ((not (one-in 30))
+         (walk-toward monster (pos (target monster)) *world*))
+        (t
+         (setf (target monster) (random-choice (monsters *world*))))))
+
+(defun idle-behavior (monster)
+  (cond ((one-in 10)
+         (setf (target monster)
+               (v+ (pos monster) (coord (random-delta 8) (random-delta 8)))))
+        (t
+         (walk-toward monster (target monster) *world*))))
+
+(defun grazing-behavior (monster)
+  (cond ((> (distance monster (target monster)) 8)
+         (walk-toward monster (target monster) *world*))
+        ((< (density (pos monster) *world* :dist 4)
+            (/ (grazing monster) 100))
+         (incf (food monster) (ceiling (/ (grazing monster) 5)))
+         (random-move monster *world*))
+        (t (random-move monster *world*))))
+
+(defun hunting-behavior (monster)
+  (cond ((> (distance monster (target monster)) 2)
+         (fight monster (target monster) *world*))
+        (t
+         (walk-toward monster (target monster) *world*))))
 
 
 (defgeneric find-home-font (world slug))
@@ -540,6 +598,12 @@ arguments (x y button)")
          (favorite-font (cdr (assoc best (pairlis scores fonts)))))
     favorite-font))
 
+
+
+
+;;; 
+;;; Functions related to drawing
+;;; 
 
 (defun blink-image (coord period image)
   "Returns a function suitable for use as the draw-fn of an animation.
@@ -685,24 +749,20 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (setf (status *game*) :end-turn))
 
 
-(defgeneric random-move (monster world coord))
-(defmethod random-move ((monster slug) world coord)
-  (flet ((random-choice (list)
-           (nth (random (length list)) list)))
-    (let ((directions (list (list 1 0) (list -1 0) (list 0 1) (list 0 -1))))
-     (destructuring-bind (dx dy)
-         (random-choice
-          (template-delete
-           (cons (list 0 0) directions)
-           (cons t
-                 (mapcar (lambda (dir)
-                           (destructuring-bind ((x y) dx dy) (cons coord dir)
-                             (not (world-at world (+ x dx) (+ y dy)))))
-                         directions))))
-       (move monster dx dy)))))
-
-(defmethod random-move ((cell monster) world coord)
-  (random-move cell world coord))
+(defgeneric random-move (monster world))
+(defmethod random-move ((monster monster) world)
+  (let ((directions (list (list 1 0) (list -1 0) (list 0 1) (list 0 -1))))
+    (destructuring-bind (dx dy)
+        (random-choice
+         (template-delete
+          (cons (list 0 0) directions)
+          (cons t
+                (mapcar (lambda (dir)
+                          (with-slots (x y) (pos monster)
+                            (destructuring-bind (dx dy) dir
+                             (not (world-at world (+ x dx) (+ y dy))))))
+                        directions))))
+      (move monster dx dy))))
 
 (defgeneric walk-toward (monster spot world))
 (defmethod walk-toward ((monster monster) spot world)
@@ -716,7 +776,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                     ((> y (y spot)) -1)
                     (t                0)))
       (if (world-at world (+ x dx) (+ y dy))
-          (random-move monster world (list x y))
+          (random-move monster world)
           (move monster dx dy)))))
 
 
@@ -725,7 +785,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defmethod world-at (world x y)
   (if (and (player world) (= x (x (player world))) (= y (y (player world))))
       (player world)
-      (find-if (lambda (slug) (and (= (x slug) x) (= (y slug) y)))
+      (find-if (lambda (slug) (and slug (= (x slug) x) (= (y slug) y)))
                (monsters world))))
 
 (defgeneric item-at (world x y))
