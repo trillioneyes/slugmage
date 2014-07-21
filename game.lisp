@@ -325,7 +325,7 @@ arguments (x y button)")
                                :g (min 255 (max 0 (* 5 weight)))
                                :b (min 255 (max 0 (* 15 mana))))))
   (setf (slot-value slug 'life) (max-life slug)
-        (slot-value slug 'food) (stop-feeding-threshold slug)))
+        (slot-value slug 'food) (feeding-threshold slug)))
 
 
 (defun trait-magnitude (slug)
