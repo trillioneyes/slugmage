@@ -60,7 +60,7 @@ arguments (x y button)")
 ;;; Return a random integer in the range (-n/2, n/2)
 (defun random-delta (n) (- (random n) (floor (/ n 2))))
 ;;; Return t with probability 1/n; else return nil
-(defun one-in (n) (= 0 (random n)))
+(defun one-in (n) (if (<= n 0) t (= 0 (random n))))
 ;;; A probability function with a positive derivative
 ;;; A higher penalty decreases the probability for low values of x, but has
 ;;; vanishing impact for large x.
@@ -520,9 +520,11 @@ arguments (x y button)")
 (defun transform? (slug coords world)
   (with-slots (home-font target food mana weight)
               slug
-    (or (and (< food 3)
-             (one-in (+ 100 (- mana)
-                        (population coords world :dist 5 :filter-type 'slug-font)))))))
+    (or
+     (and (< food 3)
+          (one-in
+           (+ 100 (- mana)
+              (population coords world :dist 5 :filter-type 'slug-font)))))))
 (defun set-explore-target (monster coords world)
   (loop while (prob (population (target monster) world :dist 5) 2) do
         (setf (target monster)
