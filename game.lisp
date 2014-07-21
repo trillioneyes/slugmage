@@ -316,15 +316,14 @@ arguments (x y button)")
    (weight :initform (mutate 5 5))
    (mana :initform (mutate 1 5))))
 
-(defmethod color :before ((slug slug))
-  (if (null (slot-value slug 'color))
-      (with-slots (aggression color mana weight) slug
-        (setf color (sdl:color :r (min 255 (max 0 (* 15 aggression)))
-                               :g (min 255 (max 0 (* 15 weight)))
-                               :b (min 255 (max 0 (* 15 mana))))))))
-(defmethod life :before ((slug slug))
-  (if (null (slot-value slug 'life))
-      (setf (life slug) (max-life slug))))
+(defmethod initialize-instance :after
+  ((slug slug) &rest initargs &key &allow-other-keys)
+  (with-slots (aggression color mana weight) slug
+        (setf color (sdl:color :r (min 255 (max 0 (* 2 aggression)))
+                               :g (min 255 (max 0 (* 5 weight)))
+                               :b (min 255 (max 0 (* 15 mana))))))
+  (setf (slot-value slug 'life) (max-life slug)))
+
 
 (defun trait-sum (slug)
   "Returns the sum of all traits of a given slug that are unilaterally a good thing."
