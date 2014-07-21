@@ -322,15 +322,33 @@ arguments (x y button)")
         (setf color (sdl:color :r (min 255 (max 0 (* 2 aggression)))
                                :g (min 255 (max 0 (* 5 weight)))
                                :b (min 255 (max 0 (* 15 mana))))))
-  (setf (slot-value slug 'life) (max-life slug)))
+  (setf (slot-value slug 'life) (max-life slug)
+        (slot-value slug 'food) (stop-feeding-threshold slug)))
 
 
-(defun trait-sum (slug)
-  "Returns the sum of all traits of a given slug that are unilaterally a good thing."
+(defun trait-magnitude (slug)
+  "Returns the vector magnitude of all traits of a given slug that are objectively advantageous."
   (with-slots (hunting grazing weapon armor max-life) slug
-    (+ hunting grazing weapon armor max-life)))
+    (flet ((sq (x) (expt x 2)))
+     (sqrt
+      (+ (sq hunting) (sq grazing) (sq weapon) (sq armor) (sq max-life))))))
 (defun metabolic-cost (slug)
-  (ceiling (sqrt (/ (trait-sum slug) 10))))
+  (ceiling (/ (trait-magnitude slug) 10)))
+(defun scale-traits (k slug)
+  "Scale the objectively-advantageous traits of a slug so that they have the given magnitude when considered as a vector."
+  (let ((factor (/ k (trait-magnitude slug))))
+    (macrolet ((% (x) `(setf (,x slug) (* (,x slug) factor))))
+      (% hunting) (% grazing) (% weapon) (% armor) (% max-life))))
+
+(defun cost-of-turns (slug n)
+  "The amount of food the slug will lose over the next n turns, assuming normal operation."
+  (* (metabolic-cost slug) n))
+(defun feeding-threshold (slug)
+  "Calculate the food value at which this slug should start to look for food. Should be about 30-50 turns before starvation."
+  (cost-of-turns slug 40))
+(defun stop-feeding-threshold (slug)
+  "Calculate the food value above which this slug should stop feeding and move on to something else. Should be about 50-75 turns above the feeding threshold."
+  (+ (feeding-threshold slug) (cost-of-turns slug 70)))
 
 
 (defgeneric color-dist (one two))
@@ -434,17 +452,22 @@ arguments (x y button)")
   (push (make-mate-anim (pos slug2)) (active-animations *game*))
   (with-slots (mana weapon max-life social home-font) slug1
     (with-slots (weight armor grazing hunting aggression) slug2
-      (let ((tolerance 5))
-        (make-instance 'slug :home-font home-font
-                       :mana (mutate mana tolerance)
-                       :weight (mutate weight tolerance)
-                       :weapon (mutate weapon tolerance)
-                       :max-life (mutate max-life tolerance)
-                       :social (mutate social tolerance)
-                       :armor (mutate armor tolerance)
-                       :grazing (mutate grazing tolerance)
-                       :hunting (mutate hunting tolerance)
-                       :aggression (mutate aggression tolerance))))))
+      (let* ((tolerance 5)
+             (spawn
+              (make-instance 'slug :home-font home-font
+                             :mana (mutate mana tolerance)
+                             :weight (mutate weight tolerance)
+                             :weapon (mutate weapon tolerance)
+                             :max-life (mutate max-life tolerance)
+                             :social (mutate social tolerance)
+                             :armor (mutate armor tolerance)
+                             :grazing (mutate grazing tolerance)
+                             :hunting (mutate hunting tolerance)
+                             :aggression (mutate aggression tolerance))))
+        (scale-traits (k-strat slug1) spawn)
+        (decf (food slug1) (* 5 (metabolic-cost spawn)))
+        (decf (food slug2) (* 5 (metabolic-cost spawn)))
+        (push spawn (daughters slug1))))))
 
 (defgeneric mutate (slug &optional tolerance))
 
@@ -541,7 +564,9 @@ arguments (x y button)")
      ((and (not (eq ai-state :mate))
            (> food (* 15 k-strat)))
       (setf ai-state :mate
-            target (random-choice (neighbors coords *world* :dist 10)))))
+            target (or (random-choice (neighbors coords *world* :dist 10))
+                       (random-choice (neighbors coords *world* :dist 25))
+                       monster))))
     ;; Metabolism
     (unless (>= (life monster) max-life)
         (incf (life monster))
