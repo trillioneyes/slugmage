@@ -467,8 +467,8 @@ arguments (x y button)")
                              :hunting (mutate hunting tolerance)
                              :aggression (mutate aggression tolerance))))
         (scale-traits (k-strat slug1) spawn)
-        (decf (food slug1) (* 5 (metabolic-cost spawn)))
-        (decf (food slug2) (* 5 (metabolic-cost spawn)))
+        (decf (food slug1) (trait-magnitude spawn))
+        (decf (food slug2) (trait-magnitude spawn))
         (push spawn (daughters slug1))))))
 
 (defgeneric mutate (slug &optional tolerance))
@@ -557,14 +557,14 @@ arguments (x y button)")
     ;; target for that state
     (cond
      ((and (not (member ai-state '(:hunt :graze)))
-           (< food (* 15 (metabolic-cost monster))))
+           (< food (feeding-threshold monster)))
       (if (prob grazing hunting)
           (setf ai-state :graze
                 target   home-font)
         (setf ai-state :hunt
               target (random-choice (neighbors coords *world* :dist 25)))))
      ((and (not (eq ai-state :mate))
-           (> food (* 15 k-strat)))
+           (> food (* 2 k-strat)))
       (setf ai-state :mate
             target (or (random-choice (neighbors coords *world* :dist 10))
                        (random-choice (neighbors coords *world* :dist 25))
@@ -572,7 +572,7 @@ arguments (x y button)")
     ;; Metabolism
     (unless (>= (life monster) max-life)
         (incf (life monster))
-        (decf food))
+        (decf food (metabolic-cost monster)))
     (decf food (metabolic-cost monster))
     (cond
      ((transform? monster coords world)
