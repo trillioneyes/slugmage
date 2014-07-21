@@ -67,7 +67,9 @@ arguments (x y button)")
 (defun prob (x &optional (penalty 10))
   (and (> x 0) (< (random (+ x penalty)) x)))
 (defun random-choice (list)
-  (nth (random (length list)) list))
+  (if (null list)
+      nil
+    (nth (random (length list)) list)))
 
 
 (defgeneric lerp (start end alpha))
