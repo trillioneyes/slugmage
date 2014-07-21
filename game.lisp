@@ -339,7 +339,7 @@ arguments (x y button)")
 (defun scale-traits (k slug)
   "Scale the objectively-advantageous traits of a slug so that they have the given magnitude when considered as a vector."
   (let ((factor (/ k (trait-magnitude slug))))
-    (macrolet ((% (x) `(setf (,x slug) (* (,x slug) factor))))
+    (macrolet ((% (x) `(setf (,x slug) (snap (* (,x slug) factor)))))
       (% hunting) (% grazing) (% weapon) (% armor) (% max-life))))
 
 (defun cost-of-turns (slug n)
