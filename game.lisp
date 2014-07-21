@@ -562,7 +562,8 @@ arguments (x y button)")
           (setf ai-state :graze
                 target   home-font)
         (setf ai-state :hunt
-              target (random-choice (neighbors coords *world* :dist 25)))))
+              target (or (random-choice (neighbors coords *world* :dist 25))
+                         home-font))))
      ((and (not (eq ai-state :mate))
            (> food (* 2 k-strat)))
       (setf ai-state :mate
