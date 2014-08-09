@@ -161,7 +161,7 @@ arguments (x y button)")
    (world  :accessor world
            :initarg :world)
    (selected-slug :accessor selected-slug
-                  :initform nil)
+                  :initform nil) 
    (ui-top :accessor ui-top
            :initform 550)
    (ui-border :accessor ui-border
@@ -320,6 +320,7 @@ arguments (x y button)")
 
 (defmethod initialize-instance :after
   ((slug slug) &rest initargs &key &allow-other-keys)
+  (declare (ignore initargs))
   (with-slots (aggression color mana weight) slug
         (setf color (sdl:color :r (min 255 (max 0 (* 2 aggression)))
                                :g (min 255 (max 0 (* 5 weight)))
@@ -911,6 +912,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
       (print-att 'social 2 2)
       (print-att 'armor 2 3)
       (sdl:draw-surface-at-* surface x y :surface window))))
+(defmethod draw-slug-info ((slug player) window x y w h)
+  ())
 
 (defun draw-spell-info (spell window x y w h)
   (if spell
@@ -936,7 +939,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (let ((inventory-surface (sdl:create-surface w h))
         (inventory (inventory-world
                     (reverse (inventory (player (world *game*))))
-                                    w h)))
+                    w h)))
     (draw inventory 0 0 inventory-surface)
     (sdl:draw-surface-at-* inventory-surface x y :surface window)))
 
@@ -963,13 +966,16 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
     (draw-spells window (+ border 80 border) (+ top border)
                  40 10)
 
-    (typecase (selected-slug *game*)
-      (slug (draw-slug-info (selected-slug *game*) window
-                       (+ border 80 border 40 border)
-                       (+ top border) 200 40))
-      (symbol (draw-spell-info (selected-slug *game*) window
-                               (+ border 80 border 40 border)
-                               (+ top border) 200 40)))))
+    
+    (if (selected-slug *game*)
+        (draw-slug-info (selected-slug *game*) window
+                        (+ border 80 border 40 border
+                           (if (active-spell *game*) (+ 200 border) 0))
+                        (+ top border) 200 40))
+    (if (active-spell *game*)
+        (draw-spell-info (active-spell *game*) window
+                         (+ border 80 border 40 border)
+                         (+ top border) 200 40))))
 
 
 (defun at-cursor (world x y x0 y0)
@@ -1067,8 +1073,11 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                          (y0 (y (player *world*))))
                      (at-cursor (world *game*) x y (- x0 40) (- y0 30))))
                   ((< x (+ (ui-border *game*) 80))
-                   (inv-at-cursor x y))
-                  (t (spell-at-cursor x y)))))))
+                   (inv-at-cursor x y)))
+            (active-spell *game*)
+            (if (not (eq (status *game*) :cast))
+                (spell-at-cursor x y)
+                (active-spell *game*))))))
 
 (defun main ()
   (setf *random-state* (make-random-state t))
