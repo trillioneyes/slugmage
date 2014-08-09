@@ -33,3 +33,5 @@ As for what the spells do: Lightning and Fire are currently the same (Fire used 
 slugs, and still will if there is ever a stack, but slugs shouldn't be able to colocate anymore). Hand allows
 you to grab a target slug from arbitrarily far away, and Dawn displays the victory message. (I would like
 Dawn to eventually have a pretty animation, but currently there's nothing at all.)
+
+For basic information about controls, press `?` ingame.
