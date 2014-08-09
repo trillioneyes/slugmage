@@ -146,7 +146,10 @@ arguments (x y button)")
            (process-mouse-hooks *mouse-button-down-hooks* x y b))
          (:mouse-button-up-event (:x x :y y :button b)
            (process-mouse-hooks *mouse-button-up-hooks* x y b))
-         (:key-down-event (:key key)
+         (:key-down-event (:key key :unicode char)
+           (if (= char 63) ;; this should be the value for ?
+               (setf (render-help? *game*) t)
+               (setf (render-help? *game*) nil))
            (process-key-hooks *key-down-hooks* key))
          (:key-up-event (:key key)
            (process-key-hooks *key-up-hooks* key))
@@ -169,7 +172,9 @@ arguments (x y button)")
    (active-spell :accessor active-spell
                  :initform nil)
    (active-animations :accessor active-animations
-                      :initform nil)))
+                      :initform nil)
+   (render-help? :accessor render-help?
+                 :initform nil)))
 
 (defclass world ()
   ((player   :accessor player
@@ -967,19 +972,21 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
     (:cast '("Click a square to target"))))
 
 (defun draw-controls (w h)
-  (let ((surface (sdl:create-surface w h)))
-    (loop for line in (get-help-strings (status *game*)) for y = 0 then (+ 10 y) with x = 0 do
-         (sdl:draw-string-solid-* line x y :surface surface))
-    (list surface)))
+  (if (render-help? *game*)
+      (let ((surface (sdl:create-surface w h)))
+        (loop for line in (get-help-strings (status *game*)) for y = 0 then (+ 10 y) with x = 0 do
+             (sdl:draw-string-solid-* line x y :surface surface))
+        (list surface))
+      nil))
 
 (defun draw-ui (window)
   (let ((top (ui-top *game*))
         (border (ui-border *game*))
         (ui-widgets (list (draw-inventory 80 40)
                           (draw-spells 40 10)
+                          (draw-controls 500 40)
                           (draw-slug-info (selected-slug *game*) 200 40)
-                          (draw-spell-info (active-spell *game*) 200 40)
-                          (draw-controls 500 40))))
+                          (draw-spell-info (active-spell *game*) 200 40))))
     (sdl:draw-box-* 0 top 800 80 :surface window
                     :color (sdl:color :r 25 :g 25 :b 255))
 
@@ -1107,6 +1114,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (sdl:with-init ()
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
     (sdl:enable-key-repeat 300 100)
+    (sdl:enable-unicode)
     (setf *skull* (sdl:load-image "death.bmp")
           *bash* (sdl:load-image "hit.bmp")
           *heart* (sdl:load-image "heart.bmp"))
