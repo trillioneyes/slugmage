@@ -872,8 +872,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (let ((x (mod num divisor)))
     (values x (floor (/ num divisor)))))
 
-(defgeneric draw-slug-info (slug window x y w h))
-(defmethod draw-slug-info ((slug slug) window x y w h)
+(defgeneric draw-slug-info (slug w h))
+(defmethod draw-slug-info ((slug slug) w h)
   (let ((surface (sdl:create-surface w h))
         (height (sdl:char-height sdl:*default-font*))
         (width (sdl:char-width sdl:*default-font*))
@@ -911,11 +911,13 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                  2 1)
       (print-att 'social 2 2)
       (print-att 'armor 2 3)
-      (sdl:draw-surface-at-* surface x y :surface window))))
-(defmethod draw-slug-info ((slug player) window x y w h)
+      (list surface))))
+(defmethod draw-slug-info ((slug null) w h)
+  ())
+(defmethod draw-slug-info ((slug player) w h)
   ())
 
-(defun draw-spell-info (spell window x y w h)
+(defun draw-spell-info (spell w h)
   (if spell
       (let ((surface (sdl:create-surface w h))
             (height (sdl:char-height sdl:*default-font*)))
@@ -923,7 +925,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                                  0 0 :surface surface)
         (sdl:draw-string-solid-* (get spell 'description) 0 height
                                  :surface surface)
-        (sdl:draw-surface-at-* surface x y :surface window))))
+        (list surface))))
 
 (defun inventory-world (list w h)
   (if list
@@ -935,47 +937,59 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                    collect slug))
       (make-instance 'world)))
 
- (defun draw-inventory (window x y w h)
+ (defun draw-inventory (w h)
   (let ((inventory-surface (sdl:create-surface w h))
         (inventory (inventory-world
                     (reverse (inventory (player (world *game*))))
                     w h)))
     (draw inventory 0 0 inventory-surface)
-    (sdl:draw-surface-at-* inventory-surface x y :surface window)))
+    (list inventory-surface)))
 
-(defun draw-spells (window x y w h)
-  (let ((surface (sdl:create-surface w (+ 19 h))))
+(defun draw-spells (w h)
+  (let ((thumbnails (sdl:create-surface w h))
+        (stats (sdl:create-surface w 19)))
     (sdl:draw-string-solid-* (format nil "M:~3d"
                                      (mana (player (world *game*))))
-                             0 (+ 1 h) :surface surface)
+                             0 0 :surface stats)
     (sdl:draw-string-solid-* (format nil "W:~3d"
                                      (inv-weight (player (world *game*))))
-                           0 (+ 1 h h) :surface surface)
+                           0 10 :surface stats)
     (loop for spell in *spells* for x0 from 0 do
-          (draw spell x0 0 surface))
-    (sdl:draw-surface-at-* surface x y :surface window)))
+          (draw spell x0 0 thumbnails))
+    (list thumbnails stats)))
+
+(defun get-help-strings (mode)
+  "Get a list of help strings to render in game for the given `mode'. Each string in the list will be rendered on a separate line."
+  (case mode
+    (:playing '("Use qwe ad zxc to move" "s to wait" "m for magic" "g to grab, t to drop"))
+    (:magic '("Click on a slug in your inventory to gain mana" "Click a spell to select it"))
+    (:drop '("Click on a slug in your inventory"))
+    (:cast '("Click a square to target"))))
+
+(defun draw-controls (w h)
+  (let ((surface (sdl:create-surface w h)))
+    (loop for line in (get-help-strings (status *game*)) for y = 0 then (+ 10 y) with x = 0 do
+         (sdl:draw-string-solid-* line x y :surface surface))
+    (list surface)))
 
 (defun draw-ui (window)
   (let ((top (ui-top *game*))
-        (border (ui-border *game*)))
+        (border (ui-border *game*))
+        (ui-widgets (list (draw-inventory 80 40)
+                          (draw-spells 40 10)
+                          (draw-slug-info (selected-slug *game*) 200 40)
+                          (draw-spell-info (active-spell *game*) 200 40)
+                          (draw-controls 500 40))))
     (sdl:draw-box-* 0 top 800 80 :surface window
                     :color (sdl:color :r 25 :g 25 :b 255))
 
-    (draw-inventory window border (+ top border) 80 40)
-   
-    (draw-spells window (+ border 80 border) (+ top border)
-                 40 10)
-
-    
-    (if (selected-slug *game*)
-        (draw-slug-info (selected-slug *game*) window
-                        (+ border 80 border 40 border
-                           (if (active-spell *game*) (+ 200 border) 0))
-                        (+ top border) 200 40))
-    (if (active-spell *game*)
-        (draw-spell-info (active-spell *game*) window
-                         (+ border 80 border 40 border)
-                         (+ top border) 200 40))))
+    (loop for column in ui-widgets with x = border do
+         (progn
+           (loop for widget in column with y = (+ top border)
+              when widget do
+                (progn (sdl:draw-surface-at-* widget x y :surface window)
+                       (incf y (+ border (sdl:height widget))))) 
+          (incf x (+ border (apply 'max 0 (mapcar 'sdl:width column))))))))
 
 
 (defun at-cursor (world x y x0 y0)
