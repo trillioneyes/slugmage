@@ -24,10 +24,10 @@
       (get :hand 'mana) 5
       (get :fire 'mana) 10
       (get :dawn 'mana) 100
-      (get :lightning 'description) "Single target"
-      (get :fire 'description) "Many targets"
-      (get :hand 'description) "Far grab"
-      (get :dawn 'description) "Win")
+      (get :lightning 'description) "Instantly kill a single slug from any distance."
+      (get :fire 'description) "Instantly kill a single slug from any distance."
+      (get :hand 'description) "Pull a slug into your inventory from any distance."
+      (get :dawn 'description) "Remake the world in your own image and take your place as its god.")
 
 (defparameter *game-modes*
   '(:playing :end-turn :grab :menu :magic :drop :cast :win))
@@ -930,8 +930,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
             (height *font-height*))
         (sdl:draw-string-solid-* (format nil "~a:~3d" spell (get spell 'mana))
                                  0 0 :surface surface)
-        (sdl:draw-string-solid-* (get spell 'description) 0 height
-                                 :surface surface)
+        (sdl:draw-surface-at-* (render-text (get spell 'description) w)
+                               0 height :surface surface) 
         (list surface))))
 
 (defun inventory-world (list w h)
