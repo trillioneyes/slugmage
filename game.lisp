@@ -12,6 +12,8 @@
 
 (defparameter sdl:*default-font* sdl:*font-8x8*)
 (sdl:initialise-default-font)
+(defparameter *font-height* 8)
+(defparameter *font-width* 8)
 (defparameter *tile-size* 10)
 
 (defparameter *hooks-registry* (make-hash-table)
@@ -880,7 +882,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defgeneric draw-slug-info (slug w h))
 (defmethod draw-slug-info ((slug slug) w h)
   (let ((surface (sdl:create-surface w h))
-        (height (sdl:char-height sdl:*default-font*))
+        (height *font-height*)
         (width (sdl:char-width sdl:*default-font*))
         (sdl:*default-color* (if (< (color-dist (color slug) sdl:*white*) 300)
                                  sdl:*black*
@@ -925,7 +927,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun draw-spell-info (spell w h)
   (if spell
       (let ((surface (sdl:create-surface w h))
-            (height (sdl:char-height sdl:*default-font*)))
+            (height *font-height*))
         (sdl:draw-string-solid-* (format nil "~a:~3d" spell (get spell 'mana))
                                  0 0 :surface surface)
         (sdl:draw-string-solid-* (get spell 'description) 0 height
@@ -952,31 +954,31 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defun draw-spells (w h)
   (let ((thumbnails (sdl:create-surface w h))
-        (stats (sdl:create-surface w 19)))
+        (stats (sdl:create-surface w (+ (* 2 *font-height*) 3))))
     (sdl:draw-string-solid-* (format nil "M:~3d"
                                      (mana (player (world *game*))))
-                             0 0 :surface stats)
+                             0 1 :surface stats)
     (sdl:draw-string-solid-* (format nil "W:~3d"
                                      (inv-weight (player (world *game*))))
-                           0 10 :surface stats)
+                           0 (+ *font-height* 1) :surface stats)
     (loop for spell in *spells* for x0 from 0 do
           (draw spell x0 0 thumbnails))
     (list thumbnails stats)))
 
-(defun get-help-strings (mode)
-  "Get a list of help strings to render in game for the given `mode'. Each string in the list will be rendered on a separate line."
+(defun get-help-string (mode) 
   (case mode
-    (:playing '("Use qwe ad zxc to move" "s to wait" "m for magic" "g to grab, t to drop"))
-    (:magic '("Click on a slug in your inventory to gain mana" "Click a spell to select it"))
-    (:drop '("Click on a slug in your inventory"))
-    (:cast '("Click a square to target"))))
+    (:playing "Use qwe ad zxc to move.
+s to wait.
+m for magic.
+g to grab, t to drop.")
+    (:magic "Click on a slug in your inventory to gain mana.
+Click a spell to select it.")
+    (:drop "Click on a slug in your inventory.")
+    (:cast "Click a square to target.")))
 
-(defun draw-controls (w h)
+(defun draw-controls (w)
   (if (render-help? *game*)
-      (let ((surface (sdl:create-surface w h)))
-        (loop for line in (get-help-strings (status *game*)) for y = 0 then (+ 10 y) with x = 0 do
-             (sdl:draw-string-solid-* line x y :surface surface))
-        (list surface))
+      (list (render-text (get-help-string (status *game*)) w 1))
       nil))
 
 (defun draw-ui (window)
@@ -984,7 +986,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
         (border (ui-border *game*))
         (ui-widgets (list (draw-inventory 80 40)
                           (draw-spells 40 10)
-                          (draw-controls 500 40)
+                          (draw-controls 200)
                           (draw-slug-info (selected-slug *game*) 200 40)
                           (draw-spell-info (active-spell *game*) 200 40))))
     (sdl:draw-box-* 0 top 800 80 :surface window
@@ -1026,11 +1028,51 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
             (delete slug (inventory (player (world *game*))))))))
 
 (defun win-message (x y window)
-  (let ((h (+ 1 (sdl:char-height sdl:*default-font*))))
+  (let ((h (+ 1 *font-height*)))
     (sdl:with-surface (window)
       (sdl:draw-string-solid-* "YOU WIN! :D" x y)
       (sdl:draw-string-solid-* "Press escape to return to game" x (+ y h))
       (sdl:draw-string-solid-* "or close the window to quit." x (+ y h h)))))
+
+(defun subline (string start &optional stop)
+  (let ((real-start (position-if-not (lambda (c) (char= c #\Space))
+                                     string :start start :end stop))
+        (real-stop (position-if-not (lambda (c) (char= c #\Space))
+                                    string :start start :end stop :from-end t)))
+    (if (and real-start real-stop)
+        (subseq string real-start (1+ real-stop))
+        "")))
+
+(defun break-lines/no-newlines (string width)
+  (let* ((breaks (loop for c across (format nil "~a " string) for i from 0 when (char= c #\Space)
+                    collect (1+ i)))
+         (lines (loop for pos in (append breaks '(nil)) for lastpos in (cons 1 breaks)
+                   for left = breaks then (cdr left) with start = 0
+                   when (or (not left)
+                            (= (length (subline string start lastpos)) width)
+                            (< (length (subline string start lastpos))
+                               width
+                               (length (subline string start (max 0 (1- pos))))))
+                   collect (prog1 (if left (subline string start (1- lastpos))
+                                      (subline string start))
+                               (setf start lastpos)))))
+    lines))
+
+(defun break-lines (string width)
+  (apply 'append (mapcar (lambda (s) (break-lines/no-newlines s width))
+                         (loop for i = 0 then (1+ j)
+                              as j = (position #\Newline string :start i)
+                              collect (subseq string i j)
+                              while j))))
+
+(defun render-text (string width &optional (padding 1))
+  "Return a surface consisting of the given text with newlines added to keep each line shorter than the given width (in pixels). As a second return value, also returns the height of this surface."
+  (let* ((strings (break-lines string (/ width *font-width*)))
+         (height (+ padding (* (length strings) (+ padding *font-height*))))
+         (surface (sdl:create-surface width height)))
+    (loop for line in strings for y = padding then (+ *font-height* padding y) with x = 0 do
+         (sdl:draw-string-solid-* line x y :surface surface))
+    surface))
 
 (defun game-loop ()
   (sdl-loop
