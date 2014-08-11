@@ -1072,7 +1072,7 @@ Click a spell to select it.")
          (surface (sdl:create-surface width height)))
     (loop for line in strings for y = padding then (+ *font-height* padding y) with x = 0 do
          (sdl:draw-string-solid-* line x y :surface surface))
-    surface))
+    (values surface height)))
 
 (defun game-loop ()
   (sdl-loop
