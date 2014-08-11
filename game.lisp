@@ -1074,6 +1074,12 @@ Click a spell to select it.")
          (sdl:draw-string-solid-* line x y :surface surface))
     (values surface height)))
 
+(defun select-spell (spell)
+  (when (<= (get spell 'mana)
+            (mana (player *world*)))
+    (setf (active-spell *game*) spell
+          (status *game*) :cast)))
+
 (defun game-loop ()
   (sdl-loop
       ((:playing (*key-down-hooks*
@@ -1105,10 +1111,15 @@ Click a spell to select it.")
                   (if (< x (+ (* (ui-border *game*) 2) 80))
                       (eat-slug x y)
                       (let ((spell (spell-at-cursor x y)))
-                        (when (and spell (<= (get spell 'mana)
-                                             (mana (player (world *game*)))))
-                          (setf (active-spell *game*) spell
-                                (status *game*) :cast)))))))
+                        (when spell
+                          (select-spell spell))))))
+               (*key-down-hooks*
+                (case key
+                  (:sdl-key-1 (select-spell :lightning))
+                  (:sdl-key-2 (select-spell :hand))
+                  (:sdl-key-3 (select-spell :fire))
+                  (:sdl-key-4 (select-spell :dawn))
+                  (:sdl-key-k (incf (mana (player *world*)) 100)))))
        (:cast (*mouse-button-down-hooks*
                (if button
                    (cast-spell (active-spell *game*)
