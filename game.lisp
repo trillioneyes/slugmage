@@ -16,6 +16,9 @@
 (defparameter *font-width* 8)
 (defparameter *tile-size* 10)
 
+(defparameter *num-traits-defined* 0)
+(defparameter *all-traits* nil)
+
 (defparameter *hooks-registry* (make-hash-table)
   "The keys are game statuses (e.g. :playing and :end-turn). The values should be hashes from hook types ('key-up, 'key-down, 'mouse-up, 'mouse-down) to lists of functions.")
 
@@ -80,6 +83,8 @@ arguments (x y button)")
 
 (defgeneric snap (value))
 (defmethod snap ((val number)) (round val))
+(defmethod snap ((val vector))
+  (map 'vector 'snap val))
 
 (defgeneric scale (factor value))
 (defmethod scale ((factor number) (value number)) (* factor value))
@@ -214,7 +219,8 @@ arguments (x y button)")
           (- (/ 300 *tile-size*) (y (player (world *game*)))))))
     (funcall (draw-fn anim) (age-turns anim) (age-frames anim) surface player-offset)))
 (defun expired? (anim)
-  (with-slots (frames age-frames turns age-turns) anim
+  (with-accessors ((frames frames) (age-frames age-frames) (turns turns) (age-turns age-turns))
+                  anim
    (or (and frames (>= age-frames frames))
        (and turns (>= age-turns turns)))))
 
@@ -292,27 +298,20 @@ arguments (x y button)")
    (life :accessor life
          :initarg :life
          :initform nil)
-   (max-life :accessor max-life
-             :initarg :max-life
-             :initform (mutate 15 20))
-   (weapon :accessor weapon
-           :initarg :weapon
-           :initform (mutate 5 8))
-   (armor :accessor armor
-          :initarg :armor
-          :initform (mutate 3 5))
+   (traits :type '(vector number)
+           :accessor trait-vector
+           :documentation "The slug's physical traits as a vector of numbers.
+Traits should be: max-life, weapon, armor, grazing, hunting"
+           :initarg :traits
+           :initform (make-default-traits))
+   (num-traits :type 'number
+               :reader num-traits
+               :initform *num-traits-defined*
+               :documentation "The number of traits that were defined when this slug was created, included as a kind of checksum (it should be the same for every slug).")
    (k-strat :accessor k-strat
             :initarg :k-strat
             :initform (mutate 30 40)
-            :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).")
-   (grazing :accessor grazing
-            :initarg :grazing
-            :initform (mutate 30 40)
-            :documentation "Grazing efficiency. Higher value means more nutrition recovered from being in the vicinity of a friendly font.")
-   (hunting :accessor hunting
-            :initarg :hunting
-            :initform (mutate 30 40)
-            :documentation "Hunting efficiency. Higher value means more nutrition recovered from eating another slug.")
+            :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).") 
    (social :accessor social
            :initarg :social
            :initform (mutate 30 40))
@@ -325,20 +324,43 @@ arguments (x y button)")
    (weight :initform (mutate 5 5))
    (mana :initform (mutate 1 5))))
 
+(defmacro define-trait (name docstring)
+  `(progn (setf *all-traits* (nconc *all-traits* (list ',name)))
+          (defgeneric ,name (slug) (:documentation ,docstring))
+          (defgeneric (setf ,name) (value slug))
+          (let ((trait-id *num-traits-defined*))
+            (defmethod ,name ((slug slug))
+              (aref (trait-vector slug) trait-id))
+            (defmethod (setf ,name) (value (slug slug))
+              (setf (aref (trait-vector slug) trait-id) value)))
+          (incf *num-traits-defined*)))
+(define-trait max-life
+  "The amount of life a slug starts with, and the amount at which it will stop healing")
+(define-trait weapon "The amount of damage a slug causes per turn in combat")
+(define-trait armor "A reduction applied every time the slug takes damage")
+(define-trait grazing "Controls the amount of nutrition a slug gains from being near its home font")
+(define-trait hunting "Controls the amount of nutrition a slug gains from eating another slug")
+
+(defun make-default-traits ()
+  (vector (mutate 15 20) (mutate 5 8) (mutate 3 5) (mutate 30 40) (mutate 30 40)))
+;         max-life       weapon       armor        hunting        grazing
+
+
 (defmethod initialize-instance :after
   ((slug slug) &rest initargs &key &allow-other-keys)
   (declare (ignore initargs))
-  (with-slots (aggression color mana weight) slug
-        (setf color (sdl:color :r (min 255 (max 0 (* 2 aggression)))
-                               :g (min 255 (max 0 (* 5 weight)))
-                               :b (min 255 (max 0 (* 15 mana))))))
+  (with-accessors ((aggression aggression) (mana mana) (weight weight)) slug
+        (setf (slot-value slug 'color)
+              (sdl:color :r (min 255 (max 0 (* 2 aggression)))
+                         :g (min 255 (max 0 (* 5 weight)))
+                         :b (min 255 (max 0 (* 15 mana))))))
   (setf (slot-value slug 'life) (max-life slug)
         (slot-value slug 'food) (feeding-threshold slug)))
 
 
 (defun trait-magnitude (slug)
   "Returns the vector magnitude of all traits of a given slug that are objectively advantageous."
-  (with-slots (hunting grazing weapon armor max-life) slug
+  (with-accessors ((hunting hunting) (grazing grazing) (weapon weapon) (armor armor) (max-life max-life)) slug
     (flet ((sq (x) (expt x 2)))
      (sqrt
       (+ (sq hunting) (sq grazing) (sq weapon) (sq armor) (sq max-life))))))
@@ -411,8 +433,8 @@ arguments (x y button)")
 
 (defgeneric distance (p1 p2))
 (defmethod distance ((p1 coord) (p2 coord))
-  (with-slots ((x1 x) (y1 y)) p1
-    (with-slots ((x2 x) (y2 y)) p2
+  (with-accessors ((x1 x) (y1 y)) p1
+    (with-accessors ((x2 x) (y2 y)) p2
       (sqrt (+ (expt (- x1 x2) 2) (expt (- y1 y2) 2))))))
 (defmethod distance ((m1 monster) (m2 monster))
   (distance (pos m1) (pos m2)))
@@ -456,24 +478,26 @@ arguments (x y button)")
         (remove nil (monsters world))))
 
 
+(defun merge-trait-vectors (v1 v2 tolerance)
+  (snap (map 'vector (lambda (t1 t2) (mutate (/ (+ t1 t2) 2) tolerance))
+             v1 v2)))
+
 (defgeneric mate (slug1 slug2))
 (defmethod mate ((slug1 slug) (slug2 slug))
   (push (make-mate-anim (pos slug1)) (active-animations *game*))
   (push (make-mate-anim (pos slug2)) (active-animations *game*))
-  (with-slots (mana weapon max-life social home-font) slug1
-    (with-slots (weight armor grazing hunting aggression) slug2
+  (with-accessors ((mana mana) (social social) (home-font home-font) (v1 trait-vector))
+                  slug1
+    (with-accessors ((weight weight) (aggression aggression) (v2 trait-vector))
+                    slug2
       (let* ((tolerance 5)
              (spawn
               (make-instance 'slug :home-font home-font
                              :mana (mutate mana tolerance)
                              :weight (mutate weight tolerance)
-                             :weapon (mutate weapon tolerance)
-                             :max-life (mutate max-life tolerance)
                              :social (mutate social tolerance)
-                             :armor (mutate armor tolerance)
-                             :grazing (mutate grazing tolerance)
-                             :hunting (mutate hunting tolerance)
-                             :aggression (mutate aggression tolerance))))
+                             :aggression (mutate aggression tolerance)
+                             :trait-vector (merge-trait-vectors v1 v2 tolerance))))
         (scale-traits (k-strat slug1) spawn)
         (decf (food slug1) (trait-magnitude spawn))
         (decf (food slug2) (trait-magnitude spawn))
@@ -483,7 +507,7 @@ arguments (x y button)")
 
 (defmethod mutate ((slug slug) &optional tolerance)
   (declare (ignore tolerance))
-  (with-slots (mana weight weapon max-life social armor grazing hunting aggression)
+  (with-accessors ((mana mana) (weight weight) (weapon weapon) (max-life max-life) (social social) (armor armor) (grazing grazing) (hunting hunting) (aggression aggression))
       slug
     (make-instance 'slug 
                    :mana (mutate mana)
@@ -526,7 +550,7 @@ arguments (x y button)")
 ;;; Used in take-turn for slugs
 ;;; Should the given slug turn into a font?
 (defun transform? (slug coords world)
-  (with-slots (home-font target food mana weight)
+  (with-accessors ((home-font home-font) (target target) (food food) (mana mana) (weight weight))
               slug
     (or
      (and (< food 3)
@@ -552,8 +576,8 @@ arguments (x y button)")
   monster)
 
 (defmethod take-turn ((monster slug)  world)
-  (with-slots (aggression home-font target food mana weight k-strat
-               grazing  hunting max-life social ai-state (coords pos))
+  (with-accessors ((aggression aggression) (home-font home-font) (target target) (food food) (mana mana) (weight weight) (k-strat k-strat)
+               (grazing grazing) (hunting hunting) (max-life max-life) (social social) (ai-state ai-state) (coords pos))
       monster
     (unless (member home-font (monsters world) :test #'equal)
       (setf home-font (find-home-font world monster)))
@@ -646,7 +670,7 @@ arguments (x y button)")
 (defun blink-image (coord period image)
   "Returns a function suitable for use as the draw-fn of an animation.
 x and y are the coordinates to draw to. period is the length of one full blink-on, blink-off cycle in frames."
-  (with-slots (x y) coord
+  (with-accessors ((x x) (y y)) coord
    (unless (and x y)
      (print (monsters *world*))
      (error "Here we go! The bug is here! Backtrace! o.o"))
@@ -796,7 +820,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
           (cons (list 0 0) directions)
           (cons t
                 (mapcar (lambda (dir)
-                          (with-slots (x y) (pos monster)
+                          (with-accessors ((x x) (y y)) (pos monster)
                             (destructuring-bind (dx dy) dir
                              (not (world-at world (+ x dx) (+ y dy))))))
                         directions))))
