@@ -19,6 +19,9 @@
 (defparameter *num-traits-defined* 0)
 (defparameter *all-traits* nil)
 
+(defparameter *grazing-distance* 4)
+(defparameter *gestation-time* 15)
+
 (defparameter *hooks-registry* (make-hash-table)
   "The keys are game statuses (e.g. :playing and :end-turn). The values should be hashes from hook types ('key-up, 'key-down, 'mouse-up, 'mouse-down) to lists of functions.")
 
@@ -166,8 +169,6 @@ arguments (x y button)")
 (defclass game ()
   ((status :accessor status
            :initform :playing)
-   (player :reader player
-           :initarg :player)
    (world  :accessor world
            :initarg :world)
    (selected-slug :accessor selected-slug
@@ -293,7 +294,7 @@ arguments (x y button)")
    (target :accessor target
            :initform (coord (random-delta 100) (random-delta 100)))
    (food :accessor food
-         :initform 50
+         :initform 1
          :initarg :food)
    (life :accessor life
          :initarg :life
@@ -354,8 +355,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
               (sdl:color :r (min 255 (max 0 (* 2 aggression)))
                          :g (min 255 (max 0 (* 5 weight)))
                          :b (min 255 (max 0 (* 15 mana))))))
-  (setf (slot-value slug 'life) (max-life slug)
-        (slot-value slug 'food) (feeding-threshold slug)))
+  (setf (slot-value slug 'life) (max-life slug)))
 
 
 (defun trait-magnitude (slug)
@@ -365,7 +365,8 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
      (sqrt
       (+ (sq hunting) (sq grazing) (sq weapon) (sq armor) (sq max-life))))))
 (defun metabolic-cost (slug)
-  (ceiling (/ (trait-magnitude slug) 3)))
+  (+ (ceiling (/ (trait-magnitude slug) 3))
+     (loop for young in (daughters slug) sum (metabolic-cost (cdr young)))))
 (defun scale-traits (k slug)
   "Scale the objectively-advantageous traits of a slug so that they have the given magnitude when considered as a vector."
   (let ((factor (/ k (trait-magnitude slug))))
@@ -392,7 +393,10 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
       (sqrt (+ (expt (- r1 r2) 2) (expt (- g1 g2) 2) (expt (- b1 b2) 2))))))
 
 (defclass slug-font (slug)
-  ())
+  ((num-grazers :accessor num-grazers
+                :initform 1
+                :type 'integer
+                :documentation "Caches the number of grazers within feeding distance of this font, so that nutrition can be divided evenly among them")))
 
 
 (defun neighbors (spot world &key (dist 1) (filter-type 'slug))
@@ -409,22 +413,21 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
     (declare (ignore spot world))
     (/ (apply 'population args) (* 2 dist 2 dist))))
 
-(defun sanitize-daughters (mother)
-  (prog1 (daughters mother)
-    (dolist (d (daughters mother))
-      (setf (pos d) (pos mother)))
-    (setf (daughters mother) nil)))
-
-(defun birth-all (world)
-  (setf (monsters world) 
-        (append (monsters world)
-                (apply #'append (mapcar #'sanitize-daughters (monsters world)))
-                (sanitize-daughters (player world)))))
+(defun gestate-and-birth (slug)
+  (maplist (lambda (cell)
+             (if (<= (caar cell) 0)
+                 ; gestation time remaining is 0, so birth
+                 (progn (setf (pos (cdar cell)) (pos slug))
+                        (push (cdr (pop cell)) (monsters *world*)))
+               ; otherwise there's still some gestation to do
+               (progn (decf (caar cell))
+                      (decf (food slug) (metabolic-cost (cdar cell)))
+                      (incf (food (cdar cell)) (metabolic-cost (cdar cell))))))
+           (daughters slug)))
 
 (defun play-one-round ()
   (when (eq (status *game*) :end-turn) 
     (take-turns (world *game*)) 
-    (birth-all (world *game*))
     (setf (active-animations *game*)
           (remove-if 'expired? (active-animations *game*)))
     (dolist (anim (active-animations *game*))
@@ -499,9 +502,8 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                              :aggression (mutate aggression tolerance)
                              :trait-vector (merge-trait-vectors v1 v2 tolerance))))
         (scale-traits (k-strat slug1) spawn)
-        (decf (food slug1) (trait-magnitude spawn))
         (decf (food slug2) (trait-magnitude spawn))
-        (push spawn (daughters slug1))))))
+        (push (cons *gestation-time* spawn) (daughters slug1))))))
 
 (defgeneric mutate (slug &optional tolerance))
 
@@ -570,9 +572,14 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
     (if (one-in (+ 15 (population coords world)))
         (let ((spawn (mutate monster)))
           (setf (home-font spawn) monster)
-          (push spawn (daughters monster))))
+          (setf (pos spawn) coords)
+          (setf (food spawn) (feeding-threshold spawn))
+          (push spawn (monsters world))))
     (if (< (life monster) (max-life monster))
-        (incf (life monster))))
+        (incf (life monster)))
+    ; Update the count for num-grazers
+    (setf (num-grazers monster)
+          (max 1 (population coords world :dist *grazing-distance*))))
   monster)
 
 (defmethod take-turn ((monster slug)  world)
@@ -599,11 +606,14 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
               target (or (random-choice (neighbors coords *world* :dist 25))
                          home-font))))
      ((and (not (eq ai-state :mate))
-           (> food (* 2 k-strat)))
+           (> food (* 2 k-strat))
+           (one-in (length (daughters monster))))
       (setf ai-state :mate
             target (or (random-choice (neighbors coords *world* :dist 10))
                        (random-choice (neighbors coords *world* :dist 25))
                        monster))))
+    ;; Pregnancy
+    (gestate-and-birth monster)
     ;; Metabolism
     (unless (>= (life monster) max-life)
         (incf (life monster))
@@ -612,7 +622,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
     (cond
      ((transform? monster coords world)
       (change-class monster 'slug-font)
-      monster) 
+      monster)
      ;; nil return value says to delete this monster
      ((or (<= (life monster) 0) (<= food 0))
       (kill monster world)
@@ -636,13 +646,20 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
          (walk-toward monster (target monster) *world*))))
 
 (defun grazing-behavior (monster)
-  (cond ((> (distance monster (target monster)) 4)
-         (walk-toward monster (target monster) *world*))
-        ((< (density (pos monster) *world* :dist 2)
-            (/ (grazing monster) 400))
-         (incf (food monster) (ceiling (/ (grazing monster) 5)))
-         (random-move monster *world*))
-        (t (random-move monster *world*))))
+  (with-accessors ((font home-font) (target target) (grazing grazing)
+                   (food food))
+                  monster
+   (cond ((not target)
+          (let ((new (find-home-font *world* monster)))
+            (if new (setf target new) (setf (ai-state monster) :idle))))
+         ((> (distance monster target) *grazing-distance*)
+          (walk-toward monster target *world*))
+         ((< (density (pos monster) *world* :dist 2)
+             (/ grazing 400))
+          (incf food
+                (ceiling (/ grazing (num-grazers target) 5)))
+          (random-move monster *world*))
+         (t (random-move monster *world*)))))
 
 (defun hunting-behavior (monster)
   (cond ((> (distance monster (target monster)) 2)
@@ -884,7 +901,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 
 (defun drop (obj world)
-  (push obj (daughters (player world)))
+  (setf (pos obj) (pos (player *world*)))
+  (push obj (monsters *world*))
   (setf (inventory (player world))
         (delete obj (inventory (player world)))))
 
