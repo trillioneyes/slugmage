@@ -365,7 +365,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
      (sqrt
       (+ (sq hunting) (sq grazing) (sq weapon) (sq armor) (sq max-life))))))
 (defun metabolic-cost (slug)
-  (ceiling (/ (trait-magnitude slug) 10)))
+  (ceiling (/ (trait-magnitude slug) 3)))
 (defun scale-traits (k slug)
   "Scale the objectively-advantageous traits of a slug so that they have the given magnitude when considered as a vector."
   (let ((factor (/ k (trait-magnitude slug))))
@@ -473,7 +473,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
              (if (car cells)
                  (setf (car cells)
                        (take-turn (car cells) world))))
-           (monsters world))
+           (monsters world)) 
   (setf (monsters world)
         (remove nil (monsters world))))
 
@@ -614,7 +614,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
       (change-class monster 'slug-font)
       monster) 
      ;; nil return value says to delete this monster
-     ((or (< (life monster) 0) (< food 0))
+     ((or (<= (life monster) 0) (<= food 0))
       (kill monster world)
       nil)
      (t monster))))
@@ -636,10 +636,10 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
          (walk-toward monster (target monster) *world*))))
 
 (defun grazing-behavior (monster)
-  (cond ((> (distance monster (target monster)) 8)
+  (cond ((> (distance monster (target monster)) 4)
          (walk-toward monster (target monster) *world*))
-        ((< (density (pos monster) *world* :dist 4)
-            (/ (grazing monster) 100))
+        ((< (density (pos monster) *world* :dist 2)
+            (/ (grazing monster) 400))
          (incf (food monster) (ceiling (/ (grazing monster) 5)))
          (random-move monster *world*))
         (t (random-move monster *world*))))
@@ -925,7 +925,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                 ":~2d"))
              (print-att (att column row)
                (sdl:draw-string-solid-*
-                (format nil (att-name att) (funcall att slug))
+                (format nil (att-name att) (snap (funcall att slug)))
                 (* column (* 7 (+ 1 width))) (+ 2 (* row (+ 1 height)))
                 :surface surface)))
       (sdl:clear-display (color slug) :surface surface)
