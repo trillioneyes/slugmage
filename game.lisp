@@ -6,9 +6,9 @@
 (defparameter *game* nil)
 
 ;;; SDL surfaces; initialized later in main
-(defparameter *skull* nil)
-(defparameter *bash* nil)
-(defparameter *heart* nil)
+(defparameter *skull* nil "An SDL surface containing death.bmp")
+(defparameter *bash* nil "An SDL surface containing hit.bmp")
+(defparameter *heart* nil "An SDL surface containing heart.bmp")
 
 (defparameter sdl:*default-font* sdl:*font-8x8*)
 (sdl:initialise-default-font)
@@ -16,11 +16,15 @@
 (defparameter *font-width* 8)
 (defparameter *tile-size* 10)
 
-(defparameter *num-traits-defined* 0)
-(defparameter *all-traits* nil)
+(defparameter *num-traits-defined* 0
+  "The number of define-trait forms that have been evaluated so far.")
+(defparameter *all-traits* nil
+  "A list of all the traits that have been defined so far (with define-trait), in the order they were defined.")
 
-(defparameter *grazing-distance* 4)
-(defparameter *gestation-time* 15)
+(defparameter *grazing-distance* 4
+  "A slug must be within this distance of a font to gain sustenance from it.")
+(defparameter *gestation-time* 15
+  "After mating, a slug will be pregnant for this many turns.")
 
 (defparameter *hooks-registry* (make-hash-table)
   "The keys are game statuses (e.g. :playing and :end-turn). The values should be hashes from hook types ('key-up, 'key-down, 'mouse-up, 'mouse-down) to lists of functions.")
