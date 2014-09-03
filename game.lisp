@@ -611,7 +611,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
               target (or (random-choice (neighbors coords *world* :dist 25))
                          home-font))))
      ((and (not (eq ai-state :mate))
-           (> food (* 2 k-strat))
+           (> food (cost-of-turns monster *gestation-time*))
            (one-in (* 10 (length (daughters monster)))))
       (setf ai-state :mate
             target (or (random-choice (neighbors coords *world* :dist 10))
