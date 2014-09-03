@@ -162,7 +162,8 @@ arguments (x y button)")
            (process-mouse-hooks *mouse-button-up-hooks* x y b))
          (:key-down-event (:key key :unicode char)
            (if (= char 63) ;; this should be the value for ?
-               (setf (render-help? *game*) t)
+               (progn (setf (render-help? *game*) t)
+                      (debug-print-slug (selected-slug *game*) t))
                (setf (render-help? *game*) nil))
            (process-key-hooks *key-down-hooks* key))
          (:key-up-event (:key key)
@@ -969,6 +970,15 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   ())
 (defmethod draw-slug-info ((slug player) w h)
   ())
+
+(defun debug-print-slug (slug stream)
+  (if slug
+      (format stream "Showing debug information for ~s~%Target: ~s, ai-state: ~s~%Daughters ------- ~{ *   ~s~%~}~% ---------------~%Food: ~s, Life: ~s, Weight: ~s~%~s: ~s"
+              slug (target slug) (ai-state slug)
+              (mapcar (lambda (daughter) (debug-print-slug daughter nil))
+                      (daughters slug))
+              (food slug) (weight slug) *all-traits* (trait-vector slug)
+              (life slug))))
 
 (defun draw-spell-info (spell w h)
   (if spell
