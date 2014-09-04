@@ -1224,7 +1224,10 @@ Click a spell to select it.")
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
     (sdl:enable-key-repeat 300 100)
     (sdl:enable-unicode)
-    (setf *skull* (sdl:load-image "death.bmp")
-          *bash* (sdl:load-image "hit.bmp")
-          *heart* (sdl:load-image "heart.bmp"))
+    (setf *skull* (sdl:load-image
+                   (asdf:system-relative-pathname :slugmage "death.bmp"))
+          *bash* (sdl:load-image
+                  (asdf:system-relative-pathname :slugmage "hit.bmp"))
+          *heart* (sdl:load-image
+                   (asdf:system-relative-pathname :slugmage "heart.bmp")))
     (game-loop)))
