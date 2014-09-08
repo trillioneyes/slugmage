@@ -5,8 +5,7 @@
 (defparameter *world* nil)
 (defparameter *game* nil)
 
-(defparameter *assets-root-dir* (or #-slugmage-build-script(asdf:system-relative-pathname :slugmage "death.bmp")
-                                   (uiop/os:getcwd))
+(defparameter *assets-root-dir* nil
               "The directory where to look assets in.")
 ;;; SDL surfaces; initialized later in main
 (defparameter *skull* nil "An SDL surface containing death.bmp")
@@ -1227,6 +1226,9 @@ Click a spell to select it.")
     (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
     (sdl:enable-key-repeat 300 100)
     (sdl:enable-unicode)
+    (setf *assets-root-dir*
+          (or #-slugmage-build-script(asdf:system-relative-pathname :slugmage "death.bmp")
+              (uiop/os:getcwd)))
     (setf *skull* (sdl:load-image
                    (uiop/pathname:merge-pathnames* "death.bmp" *assets-root-dir*))
           *bash* (sdl:load-image
