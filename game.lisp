@@ -988,14 +988,33 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defmethod draw-slug-info ((slug player) w h)
   ())
 
+(defgeneric slug-info-string (slug))
+(defmethod slug-info-string ((slug slug))
+  (format nil "
+====================
+Showing debug information for ~s
+Target: ~s, ai-state: ~s
+Daughters ----------
+~{~a~%~}
+--------------------
+Food: ~s, Life: ~s, Weight: ~s
+~s: ~s
+====================
+"
+          slug (target slug) (ai-state slug)
+          (mapcar 'slug-info-string (daughters slug))
+          (food slug) (life slug) (weight slug)
+          *all-traits* (trait-vector slug)))
+(defmethod slug-info-string ((slug slug-baby))
+  (format nil "~
+*   ~s, born in ~s turns
+    ~s: ~s
+    Takes ~s food per turn"
+          slug (gestation-time slug) *all-traits* (trait-vector slug)
+          (metabolic-cost slug)))
+
 (defun debug-print-slug (slug stream)
-  (if slug
-      (format stream "Showing debug information for ~s~%Target: ~s, ai-state: ~s~%Daughters ------- ~{ *   ~s~%~}~% ---------------~%Food: ~s, Life: ~s, Weight: ~s~%~s: ~s"
-              slug (target slug) (ai-state slug)
-              (mapcar (lambda (daughter) (debug-print-slug daughter nil))
-                      (daughters slug))
-              (food slug) (weight slug) *all-traits* (trait-vector slug)
-              (life slug))))
+  (format stream "~a" (slug-info-string slug)))
 
 (defun draw-spell-info (spell w h)
   (if spell
