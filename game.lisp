@@ -166,7 +166,7 @@ arguments (x y button)")
            (if (= char 63) ;; this should be the value for ?
                (progn (setf (render-help? *game*) t))
                (setf (render-help? *game*) nil))
-           (if (= key :sdl-key-period)
+           (if (eq key :sdl-key-period)
                (debug-print-slug (selected-slug *game*) t))
            (process-key-hooks *key-down-hooks* key))
          (:key-up-event (:key key)
@@ -275,13 +275,11 @@ arguments (x y button)")
         :type coord)
    (mana :accessor mana
          :initform 1
-         :initarg :mana)
+         :initarg :mana
+         :type 'number)
    (weight :accessor weight
            :initform 1
-           :initarg  :weight)
-   (daughters :accessor daughters
-              :initarg :daughters
-              :initform nil)))
+           :initarg  :weight)))
 (defmethod x ((thing monster)) (x (pos thing)))
 (defmethod y ((thing monster)) (y (pos thing)))
 
@@ -292,21 +290,25 @@ arguments (x y button)")
 (defclass slug (monster)
   ((color :accessor color
           :initarg :color
-          :initform nil)
+          :initform nil
+          :type 'sdl:color)
    (ai-state :accessor ai-state
              :initarg :ai-state
-             :initform :idle)
+             :initform :idle
+             :type 'symbol)
    (home-font :accessor home-font
               :initarg :home-font
-              :initform nil)
+              :type '(or null slug-font))
    (target :accessor target
            :initform (coord (random-delta 100) (random-delta 100)))
    (food :accessor food
          :initform 1
-         :initarg :food)
+         :initarg :food
+         :type 'number)
    (life :accessor life
          :initarg :life
-         :initform nil)
+         :initform nil
+         :type 'number)
    (traits :type '(vector number)
            :accessor trait-vector
            :documentation "The slug's physical traits as a vector of numbers.
@@ -320,18 +322,31 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
    (offspring-cost :accessor offspring-cost
             :initarg :offspring-cost
             :initform (magnitude (make-default-traits))
+            :type 'number
             :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).") 
    (social :accessor social
            :initarg :social
-           :initform (mutate 30 40))
+           :initform (mutate 30 40)
+           :type 'number)
    (aggression :accessor aggression
                :initarg :aggression
-               :initform (mutate 30 40))
+               :initform (mutate 30 40)
+               :type 'number)
    (curiosity :accessor curiosity
               :initarg :curiosity
-              :initform (mutate 30 40)) 
+              :initform (mutate 30 40)
+              :type 'number) 
    (weight :initform (mutate 5 5))
-   (mana :initform (mutate 1 5))))
+   (mana :initform (mutate 1 5))
+   (daughters :accessor daughters
+              :initarg :daughters
+              :initform nil
+              :type '(list slug-baby))))
+
+(defclass slug-baby (slug)
+  ((gestation-time :initform *gestation-time*
+                   :accessor gestation-time
+                   :documentation "The number of turns remaining until this slug is born")))
 
 (defmacro define-trait (name docstring)
   `(progn (setf *all-traits* (nconc *all-traits* (list ',name)))
@@ -373,7 +388,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (magnitude (trait-vector slug)))
 (defun metabolic-cost (slug)
   (+ (ceiling (/ (trait-magnitude slug) 3))
-     (loop for young in (daughters slug) sum (metabolic-cost (cdr young)))))
+     (loop for young in (daughters slug) sum (metabolic-cost young))))
 (defun scale-traits (k slug)
   "Scale the objectively-advantageous traits of a slug so that they have the given magnitude when considered as a vector."
   (let ((factor (/ k (trait-magnitude slug))))
@@ -422,14 +437,15 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
 
 (defun gestate-and-birth (slug)
   (maplist (lambda (cell)
-             (if (<= (caar cell) 0)
+             (if (<= (gestation-time (car cell)) 0)
                  ; gestation time remaining is 0, so birth
-                 (progn (setf (pos (cdar cell)) (pos slug))
-                        (push (cdr (pop cell)) (monsters *world*)))
+                 (progn (setf (pos (car cell)) (pos slug))
+                        (change-class (car cell) 'slug)
+                        (push (pop cell) (monsters *world*)))
                ; otherwise there's still some gestation to do
-               (progn (decf (caar cell))
-                      (decf (food slug) (metabolic-cost (cdar cell)))
-                      (incf (food (cdar cell)) (metabolic-cost (cdar cell))))))
+               (progn (decf (gestation-time (car cell)))
+                      (decf (food slug) (metabolic-cost (car cell)))
+                      (incf (food (car cell)) (metabolic-cost (car cell))))))
            (daughters slug)))
 
 (defun play-one-round ()
@@ -502,7 +518,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                     slug2
       (let* ((tolerance 5)
              (spawn
-              (make-instance 'slug :home-font home-font
+              (make-instance 'slug-baby :home-font home-font
                              :mana (mutate mana tolerance)
                              :weight (mutate weight tolerance)
                              :social (mutate social tolerance)
@@ -510,7 +526,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                              :trait-vector (merge-trait-vectors v1 v2 tolerance))))
         (scale-traits (offspring-cost slug1) spawn)
         (decf (food slug2) (trait-magnitude spawn))
-        (push (cons *gestation-time* spawn) (daughters slug1))))))
+        (push spawn (daughters slug1))))))
 
 (defgeneric mutate (slug &optional tolerance))
 
@@ -973,14 +989,33 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defmethod draw-slug-info ((slug player) w h)
   ())
 
+(defgeneric slug-info-string (slug))
+(defmethod slug-info-string ((slug slug))
+  (format nil "
+====================
+Showing debug information for ~s
+Target: ~s, ai-state: ~s
+Daughters ----------
+~{~a~%~}
+--------------------
+Food: ~s, Life: ~s, Weight: ~s
+~s: ~s
+====================
+"
+          slug (target slug) (ai-state slug)
+          (mapcar 'slug-info-string (daughters slug))
+          (food slug) (life slug) (weight slug)
+          *all-traits* (trait-vector slug)))
+(defmethod slug-info-string ((slug slug-baby))
+  (format nil "~
+*   ~s, born in ~s turns
+    ~s: ~s
+    Takes ~s food per turn"
+          slug (gestation-time slug) *all-traits* (trait-vector slug)
+          (metabolic-cost slug)))
+
 (defun debug-print-slug (slug stream)
-  (if slug
-      (format stream "Showing debug information for ~s~%Target: ~s, ai-state: ~s~%Daughters ------- ~{ *   ~s~%~}~% ---------------~%Food: ~s, Life: ~s, Weight: ~s~%~s: ~s"
-              slug (target slug) (ai-state slug)
-              (mapcar (lambda (daughter) (debug-print-slug daughter nil))
-                      (daughters slug))
-              (food slug) (weight slug) *all-traits* (trait-vector slug)
-              (life slug))))
+  (format stream "~a" (slug-info-string slug)))
 
 (defun draw-spell-info (spell w h)
   (if spell
