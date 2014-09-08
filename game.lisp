@@ -387,7 +387,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
       (+ (sq hunting) (sq grazing) (sq weapon) (sq armor) (sq max-life))))))
 (defun metabolic-cost (slug)
   (+ (ceiling (/ (trait-magnitude slug) 3))
-     (loop for young in (daughters slug) sum (metabolic-cost (cdr young)))))
+     (loop for young in (daughters slug) sum (metabolic-cost young))))
 (defun scale-traits (k slug)
   "Scale the objectively-advantageous traits of a slug so that they have the given magnitude when considered as a vector."
   (let ((factor (/ k (trait-magnitude slug))))
@@ -436,14 +436,15 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
 
 (defun gestate-and-birth (slug)
   (maplist (lambda (cell)
-             (if (<= (caar cell) 0)
+             (if (<= (gestation-time (car cell)) 0)
                  ; gestation time remaining is 0, so birth
-                 (progn (setf (pos (cdar cell)) (pos slug))
-                        (push (cdr (pop cell)) (monsters *world*)))
+                 (progn (setf (pos (car cell)) (pos slug))
+                        (change-class (car cell) 'slug)
+                        (push (pop cell) (monsters *world*)))
                ; otherwise there's still some gestation to do
-               (progn (decf (caar cell))
-                      (decf (food slug) (metabolic-cost (cdar cell)))
-                      (incf (food (cdar cell)) (metabolic-cost (cdar cell))))))
+               (progn (decf (gestation-time (car cell)))
+                      (decf (food slug) (metabolic-cost (car cell)))
+                      (incf (food (car cell)) (metabolic-cost (car cell))))))
            (daughters slug)))
 
 (defun play-one-round ()
@@ -516,7 +517,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                     slug2
       (let* ((tolerance 5)
              (spawn
-              (make-instance 'slug :home-font home-font
+              (make-instance 'slug-baby :home-font home-font
                              :mana (mutate mana tolerance)
                              :weight (mutate weight tolerance)
                              :social (mutate social tolerance)
@@ -524,7 +525,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                              :trait-vector (merge-trait-vectors v1 v2 tolerance))))
         (scale-traits (k-strat slug1) spawn)
         (decf (food slug2) (trait-magnitude spawn))
-        (push (cons *gestation-time* spawn) (daughters slug1))))))
+        (push spawn (daughters slug1))))))
 
 (defgeneric mutate (slug &optional tolerance))
 
