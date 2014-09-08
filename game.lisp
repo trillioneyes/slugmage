@@ -5,6 +5,9 @@
 (defparameter *world* nil)
 (defparameter *game* nil)
 
+(defparameter *assets-root-dir* (or #-slugmage-build-script(asdf:system-relative-pathname :slugmage "death.bmp")
+                                   (uiop/os:getcwd))
+              "The directory where to look assets in.")
 ;;; SDL surfaces; initialized later in main
 (defparameter *skull* nil "An SDL surface containing death.bmp")
 (defparameter *bash* nil "An SDL surface containing hit.bmp")
@@ -1225,9 +1228,9 @@ Click a spell to select it.")
     (sdl:enable-key-repeat 300 100)
     (sdl:enable-unicode)
     (setf *skull* (sdl:load-image
-                   (asdf:system-relative-pathname :slugmage "death.bmp"))
+                   (uiop/pathname:merge-pathnames* "death.bmp" *assets-root-dir*))
           *bash* (sdl:load-image
-                  (asdf:system-relative-pathname :slugmage "hit.bmp"))
+                  (uiop/pathname:merge-pathnames* "hit.bmp" *assets-root-dir*))
           *heart* (sdl:load-image
-                   (asdf:system-relative-pathname :slugmage "heart.bmp")))
+                   (uiop/pathname:merge-pathnames* "heart.bmp" *assets-root-dir*)))
     (game-loop)))

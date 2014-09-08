@@ -1,3 +1,5 @@
+(push :slugmage-buildscript *features*)
+
 #+sbcl
 (progn 
   (compile-file "make-sbcl.lisp")
