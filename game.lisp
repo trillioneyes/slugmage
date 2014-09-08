@@ -273,13 +273,11 @@ arguments (x y button)")
         :type coord)
    (mana :accessor mana
          :initform 1
-         :initarg :mana)
+         :initarg :mana
+         :type 'number)
    (weight :accessor weight
            :initform 1
-           :initarg  :weight)
-   (daughters :accessor daughters
-              :initarg :daughters
-              :initform nil)))
+           :initarg  :weight)))
 (defmethod x ((thing monster)) (x (pos thing)))
 (defmethod y ((thing monster)) (y (pos thing)))
 
@@ -290,21 +288,25 @@ arguments (x y button)")
 (defclass slug (monster)
   ((color :accessor color
           :initarg :color
-          :initform nil)
+          :initform nil
+          :type 'sdl:color)
    (ai-state :accessor ai-state
              :initarg :ai-state
-             :initform :idle)
+             :initform :idle
+             :type 'symbol)
    (home-font :accessor home-font
               :initarg :home-font
-              :initform nil)
+              :type '(or null slug-font))
    (target :accessor target
            :initform (coord (random-delta 100) (random-delta 100)))
    (food :accessor food
          :initform 1
-         :initarg :food)
+         :initarg :food
+         :type 'number)
    (life :accessor life
          :initarg :life
-         :initform nil)
+         :initform nil
+         :type 'number)
    (traits :type '(vector number)
            :accessor trait-vector
            :documentation "The slug's physical traits as a vector of numbers.
@@ -318,18 +320,31 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
    (k-strat :accessor k-strat
             :initarg :k-strat
             :initform (mutate 30 40)
+            :type 'number
             :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).") 
    (social :accessor social
            :initarg :social
-           :initform (mutate 30 40))
+           :initform (mutate 30 40)
+           :type 'number)
    (aggression :accessor aggression
                :initarg :aggression
-               :initform (mutate 30 40))
+               :initform (mutate 30 40)
+               :type 'number)
    (curiosity :accessor curiosity
               :initarg :curiosity
-              :initform (mutate 30 40)) 
+              :initform (mutate 30 40)
+              :type 'number) 
    (weight :initform (mutate 5 5))
-   (mana :initform (mutate 1 5))))
+   (mana :initform (mutate 1 5))
+   (daughters :accessor daughters
+              :initarg :daughters
+              :initform nil
+              :type '(list slug-baby))))
+
+(defclass slug-baby (slug)
+  ((gestation-time :initform *gestation-time*
+                   :accessor gestation-time
+                   :documentation "The number of turns remaining until this slug is born")))
 
 (defmacro define-trait (name docstring)
   `(progn (setf *all-traits* (nconc *all-traits* (list ',name)))
