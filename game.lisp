@@ -197,7 +197,7 @@ arguments (x y button)")
              :initarg :player
              :initform nil)
    (monsters :accessor monsters
-             :initform nil
+             :initform (make-hash-table)
              :initarg  :monsters)
    (walls    :accessor walls
              :initarg :walls
@@ -256,8 +256,7 @@ arguments (x y button)")
   (load-hooks value))
 
 (defun register (world &rest monsters)
-  (make-instance 'world :monsters (append monsters (monsters world))
-                 :player (player world) :walls (walls world)))
+  (loop for m in monsters do (add-monster m world)))
 
 (defclass coord ()
   ((x :accessor x :initarg :x)
@@ -442,7 +441,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                  ; gestation time remaining is 0, so birth
                  (let ((baby (pop cell)))
                    (setf (pos baby) (pos slug))
-                   (push baby (monsters *world*))
+                   (add-monster baby *world*)
                    (change-class baby 'slug))
                ; otherwise there's still some gestation to do
                (progn (decf (gestation-time (car cell)))
@@ -494,16 +493,12 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (declare (ignore spot spell))
   (setf (status *game*) :win))
 
+(defun alive? (slug) (and (> (life slug) 0) (> (food slug) 0)))
+
 (defun take-turns (world)
-  ;; Using maplist so that we can modify the list in-place
-  ;; We are only ever interested in (car cells), not cells itself
-  (maplist (lambda (cells)
-             (if (car cells)
-                 (setf (car cells)
-                       (take-turn (car cells) world))))
-           (monsters world)) 
-  (setf (monsters world)
-        (remove nil (monsters world))))
+  (dolist (m (alexandria:hash-table-values (monsters world)))
+    (if (and (not (typep m 'player)) (alive? m))
+        (take-turn m world))))
 
 
 (defun merge-trait-vectors (v1 v2 tolerance)
@@ -599,7 +594,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
           (setf (home-font spawn) monster)
           (setf (pos spawn) coords)
           (setf (food spawn) (feeding-threshold spawn))
-          (push spawn (monsters world))))
+          (add-monster spawn world)))
     (if (< (life monster) (max-life monster))
         (incf (life monster)))
     ; Update the count for num-grazers
@@ -611,7 +606,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (with-accessors ((aggression aggression) (home-font home-font) (target target) (food food) (mana mana) (weight weight) (offspring-cost offspring-cost)
                (grazing grazing) (hunting hunting) (max-life max-life) (social social) (ai-state ai-state) (coords pos))
       monster
-    (unless (member home-font (monsters world) :test #'equal)
+    (unless (alive? home-font)
       (setf home-font (find-home-font world monster)))
     ;; Act according to current state
     (ecase ai-state
@@ -783,10 +778,10 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defgeneric draw (object x y window))
 
 (defmethod draw ((object world) x0 y0 window)
-  (dolist (monster (monsters object))
-    (let ((x (x monster))
-          (y (y monster))) 
-      (draw monster (+ x0 x) (+ y0 y) window))) 
+  (dolist (pos (alexandria:hash-table-keys (monsters object)))
+    (let ((x (x pos))
+          (y (y pos))) 
+      (draw (gethash pos (monsters object)) (+ x0 x) (+ y0 y) window))) 
   (if (player object)
       (let* ((player (player object))
              (x (x player))
@@ -846,6 +841,8 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defgeneric move (object dx dy))
 (defmethod move ((monster monster) dx dy)
   (setf (pos monster) (move (pos monster) dx dy))
+  (remhash (pos monster) (monsters *world*))
+  (setf (gethash (pos monster) (monsters *world*)) monster)
   monster)
 (defmethod move ((pos coord) dx dy)
   (coord (+ dx (x pos)) (+ dy (y pos))))
@@ -889,8 +886,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defmethod world-at (world x y)
   (if (and (player world) (= x (x (player world))) (= y (y (player world))))
       (player world)
-      (find-if (lambda (slug) (and slug (= (x slug) x) (= (y slug) y)))
-               (monsters world))))
+      (gethash (coord x y) (monsters world))))
 
 (defgeneric item-at (world x y))
 (defmethod item-at (world x y)
@@ -899,9 +895,19 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (world-at world x y))
 
 
+(defun add-monster (monster world)
+  (labels ((find-clear-space (monster world)
+             (let* ((p (pos monster))
+                    (p* (move p (random-delta 3) (random-delta 3))))
+               (setf (pos monster) p*)
+               (if (world-at world (x p) (y p))
+                   (find-clear-space monster world)))))
+    (if (world-at world (x monster) (y monster))
+        (setf (pos monster) (find-clear-space monster world))
+      (setf (gethash (pos monster) (monsters world))
+            monster))))
 (defun remove-monster (monster world)
-  (setf (monsters world)
-        (remove monster (monsters world))))
+  (remhash (pos monster) (monsters world)))
 
 
 (defun kill (monster world)
@@ -927,7 +933,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defun drop (obj world)
   (setf (pos obj) (pos (player *world*)))
-  (push obj (monsters *world*))
+  (add-monster obj world)
   (setf (inventory (player world))
         (delete obj (inventory (player world)))))
 
@@ -998,7 +1004,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 Showing debug information for ~s
 Target: ~s, ai-state: ~s
 Daughters ----------
-~{~a~%~}
+~{~a~}
 --------------------
 Food: ~s, Life: ~s, Weight: ~s
 ~s: ~s
@@ -1009,7 +1015,7 @@ Food: ~s, Life: ~s, Weight: ~s
           (food slug) (life slug) (weight slug)
           *all-traits* (trait-vector slug)))
 (defmethod slug-info-string ((slug slug-baby))
-  (format nil "~
+  (format nil "~&~
 *   ~s, born in ~s turns
     ~s: ~s
     Takes ~s food per turn"
@@ -1251,25 +1257,23 @@ Click a spell to select it.")
 (defun main ()
   (setf *random-state* (make-random-state t))
   (setf *world*
-        (register
-         (make-instance 'world :player (make-instance 'player
-                                               :weight 30
-                                               :pos (coord 8 12)))
-         (make-instance 'slug-font :pos (coord -5 -5))
-         (make-instance 'slug-font :pos (coord 30 25))
-         (make-instance 'slug-font :pos (coord -13 29) :social 100)))
+        (make-instance 'world :player (make-instance 'player :weight 30 :pos (coord 8 12))))
+  (register *world*
+            (make-instance 'slug-font :pos (coord -5 -5))
+            (make-instance 'slug-font :pos (coord 30 25))
+            (make-instance 'slug-font :pos (coord -13 29)))
   (setf *game* (make-instance 'game :world *world*))
   (sdl:with-init ()
-    (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
-    (sdl:enable-key-repeat 300 100)
-    (sdl:enable-unicode)
-    (setf *assets-root-dir*
-          (or #-slugmage-build-script(asdf:system-relative-pathname :slugmage "death.bmp")
-              (uiop/os:getcwd)))
-    (setf *skull* (sdl:load-image
-                   (uiop/pathname:merge-pathnames* "death.bmp" *assets-root-dir*))
-          *bash* (sdl:load-image
-                  (uiop/pathname:merge-pathnames* "hit.bmp" *assets-root-dir*))
-          *heart* (sdl:load-image
-                   (uiop/pathname:merge-pathnames* "heart.bmp" *assets-root-dir*)))
-    (game-loop)))
+                 (sdl:window 800 600 :title-caption "Cannibal Slugmage of Eden")
+                 (sdl:enable-key-repeat 300 100)
+                 (sdl:enable-unicode)
+                 (setf *assets-root-dir*
+                       (or #-slugmage-build-script(asdf:system-relative-pathname :slugmage "death.bmp")
+                           (uiop/os:getcwd)))
+                 (setf *skull* (sdl:load-image
+                                (uiop/pathname:merge-pathnames* "death.bmp" *assets-root-dir*))
+                       *bash* (sdl:load-image
+                               (uiop/pathname:merge-pathnames* "hit.bmp" *assets-root-dir*))
+                       *heart* (sdl:load-image
+                                (uiop/pathname:merge-pathnames* "heart.bmp" *assets-root-dir*)))
+                 (game-loop)))
