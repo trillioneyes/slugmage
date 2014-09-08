@@ -316,9 +316,9 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                :reader num-traits
                :initform *num-traits-defined*
                :documentation "The number of traits that were defined when this slug was created, included as a kind of checksum (it should be the same for every slug).")
-   (k-strat :accessor k-strat
-            :initarg :k-strat
-            :initform (mutate 30 40)
+   (offspring-cost :accessor offspring-cost
+            :initarg :offspring-cost
+            :initform (magnitude (make-default-traits))
             :documentation "Referring to the biological K-strategy, a higher value here means fewer but more powerful offspring; lower value means closer to R-strategy (many weak offspring).") 
    (social :accessor social
            :initarg :social
@@ -364,13 +364,12 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                          :b (min 255 (max 0 (* 15 mana))))))
   (setf (slot-value slug 'life) (max-life slug)))
 
+(defun magnitude (vector)
+  (sqrt (reduce '+ (map 'vector '* vector))))
 
 (defun trait-magnitude (slug)
   "Returns the vector magnitude of all traits of a given slug that are objectively advantageous."
-  (with-accessors ((hunting hunting) (grazing grazing) (weapon weapon) (armor armor) (max-life max-life)) slug
-    (flet ((sq (x) (expt x 2)))
-     (sqrt
-      (+ (sq hunting) (sq grazing) (sq weapon) (sq armor) (sq max-life))))))
+  (magnitude (trait-vector slug)))
 (defun metabolic-cost (slug)
   (+ (ceiling (/ (trait-magnitude slug) 3))
      (loop for young in (daughters slug) sum (metabolic-cost (cdr young)))))
@@ -508,7 +507,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
                              :social (mutate social tolerance)
                              :aggression (mutate aggression tolerance)
                              :trait-vector (merge-trait-vectors v1 v2 tolerance))))
-        (scale-traits (k-strat slug1) spawn)
+        (scale-traits (offspring-cost slug1) spawn)
         (decf (food slug2) (trait-magnitude spawn))
         (push (cons *gestation-time* spawn) (daughters slug1))))))
 
@@ -590,7 +589,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   monster)
 
 (defmethod take-turn ((monster slug)  world)
-  (with-accessors ((aggression aggression) (home-font home-font) (target target) (food food) (mana mana) (weight weight) (k-strat k-strat)
+  (with-accessors ((aggression aggression) (home-font home-font) (target target) (food food) (mana mana) (weight weight) (offspring-cost offspring-cost)
                (grazing grazing) (hunting hunting) (max-life max-life) (social social) (ai-state ai-state) (coords pos))
       monster
     (unless (member home-font (monsters world) :test #'equal)
