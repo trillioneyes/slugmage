@@ -347,6 +347,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   ((gestation-time :initform *gestation-time*
                    :accessor gestation-time
                    :documentation "The number of turns remaining until this slug is born")))
+(defmethod gestation-time ((slug slug)) 0)
 
 (defmacro define-trait (name docstring)
   `(progn (setf *all-traits* (nconc *all-traits* (list ',name)))
@@ -439,9 +440,10 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (maplist (lambda (cell)
              (if (<= (gestation-time (car cell)) 0)
                  ; gestation time remaining is 0, so birth
-                 (progn (setf (pos (car cell)) (pos slug))
-                        (change-class (car cell) 'slug)
-                        (push (pop cell) (monsters *world*)))
+                 (let ((baby (pop cell)))
+                   (setf (pos baby) (pos slug))
+                   (push baby (monsters *world*))
+                   (change-class baby 'slug))
                ; otherwise there's still some gestation to do
                (progn (decf (gestation-time (car cell)))
                       (decf (food slug) (metabolic-cost (car cell)))
