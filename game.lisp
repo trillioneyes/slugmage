@@ -888,12 +888,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defun (setf world-at) (value world x y)
   (setf (gethash (vector x y) (monsters world)) value))
 
-(defgeneric item-at (world x y))
-(defmethod item-at (world x y)
-  ;; These used to have slightly different behavior. item-at is no longer
-  ;; useful.
-  (world-at world x y))
-
 
 (defun add-monster (monster world)
   (labels ((find-clear-space (monster world)
