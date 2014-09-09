@@ -197,7 +197,7 @@ arguments (x y button)")
              :initarg :player
              :initform nil)
    (monsters :accessor monsters
-             :initform (make-hash-table)
+             :initform (make-hash-table :test 'equalp)
              :initarg  :monsters)
    (walls    :accessor walls
              :initarg :walls
@@ -778,10 +778,10 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defgeneric draw (object x y window))
 
 (defmethod draw ((object world) x0 y0 window)
-  (dolist (pos (alexandria:hash-table-keys (monsters object)))
-    (let ((x (x pos))
-          (y (y pos))) 
-      (draw (gethash pos (monsters object)) (+ x0 x) (+ y0 y) window))) 
+  (dolist (monster (alexandria:hash-table-values (monsters object)))
+    (let ((x (x (pos monster)))
+          (y (y (pos monster)))) 
+      (draw (world-at object x y) (+ x0 x) (+ y0 y) window))) 
   (if (player object)
       (let* ((player (player object))
              (x (x player))
@@ -840,9 +840,9 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defgeneric move (object dx dy))
 (defmethod move ((monster monster) dx dy)
+  (remove-monster monster *world*)
   (setf (pos monster) (move (pos monster) dx dy))
-  (remhash (pos monster) (monsters *world*))
-  (setf (gethash (pos monster) (monsters *world*)) monster)
+  (add-monster monster *world*)
   monster)
 (defmethod move ((pos coord) dx dy)
   (coord (+ dx (x pos)) (+ dy (y pos))))
@@ -884,9 +884,9 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 (defgeneric world-at (world x y))
 (defmethod world-at (world x y)
-  (if (and (player world) (= x (x (player world))) (= y (y (player world))))
-      (player world)
-      (gethash (coord x y) (monsters world))))
+  (gethash (vector x y) (monsters world)))
+(defun (setf world-at) (value world x y)
+  (setf (gethash (vector x y) (monsters world)) value))
 
 (defgeneric item-at (world x y))
 (defmethod item-at (world x y)
@@ -907,14 +907,11 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
       (setf (gethash (pos monster) (monsters world))
             monster))))
 (defun remove-monster (monster world)
-  (remhash (pos monster) (monsters world)))
+  (remhash (vector (x (pos monster)) (y (pos monster))) (monsters world)))
 
 
 (defun kill (monster world)
-  (let ((coords (pos monster)))
-    (unless (and (x coords) (y coords))
-      (print monster)
-      (print (monsters world)))
+  (let ((coords (pos monster))) 
     (remove-monster monster world)
     (push (make-death-anim coords)
           (active-animations *game*))))
