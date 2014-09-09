@@ -691,7 +691,7 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
 (defgeneric find-home-font (world slug))
 (defmethod find-home-font ((world world) (slug slug))
   (let* ((fonts (remove-if-not (lambda (x) (typep x 'slug-font))
-                               (monsters world)))
+                               (alexandria:hash-table-values (monsters world))))
          (scores (mapcar (lambda (x) (color-dist slug x)) fonts))
          (best (if scores (apply #'min scores)))
          (favorite-font (cdr (assoc best (pairlis scores fonts)))))
