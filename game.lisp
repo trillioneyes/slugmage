@@ -902,10 +902,9 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                (setf (pos monster) p*)
                (if (world-at world (x p) (y p))
                    (find-clear-space monster world)))))
-    (if (world-at world (x monster) (y monster))
-        (setf (pos monster) (find-clear-space monster world))
-      (setf (gethash (pos monster) (monsters world))
-            monster))))
+    (setf (pos monster) (find-clear-space monster world))
+    (setf (gethash (vector (x monster) (y monster)) (monsters world))
+          monster)))
 (defun remove-monster (monster world)
   (remhash (vector (x (pos monster)) (y (pos monster))) (monsters world)))
 
