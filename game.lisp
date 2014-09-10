@@ -870,7 +870,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 
 
-(defmethod world-at (world x y)
+(defmethod world-at ((world world) x y)
   (gethash (vector x y) (monsters world)))
 (defun (setf world-at) (value world x y)
   (setf (gethash (vector x y) (monsters world)) value))
