@@ -3,4 +3,5 @@
   :name "slugmage"
   :serial t
   :depends-on (:lispbuilder-sdl)
-  :components ((:file "game")))
+  :components ((:file "arrangement")
+               (:file "game")))
