@@ -86,16 +86,13 @@ arguments (x y button)")
     (nth (random (length list)) list)))
 
 
-(defgeneric lerp (start end alpha))
 (defmethod lerp ((start number) (end number) (alpha number))
   (+ start (* alpha (- end start))))
 
-(defgeneric snap (value))
 (defmethod snap ((val number)) (round val))
 (defmethod snap ((val vector))
   (map 'vector 'snap val))
 
-(defgeneric scale (factor value))
 (defmethod scale ((factor number) (value number)) (* factor value))
 
 (defun v+ (v1 v2) (coord (+ (x v1) (x v2)) (+ (y v1) (y v2))))
@@ -234,8 +231,7 @@ arguments (x y button)")
        (and turns (>= age-turns turns)))))
 
 
-(defgeneric find-target (world))
-(defmethod find-target (world)
+(defun find-target (world)
   (nth (random (1+ (length (monsters world)))) 
        (cons (player world) (monsters world))))
 
@@ -406,7 +402,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (+ (feeding-threshold slug) (cost-of-turns slug 70)))
 
 
-(defgeneric color-dist (one two))
 (defmethod color-dist ((slug1 slug) (slug2 slug))
   (1+ (ceiling (color-dist (color slug1) (color slug2)))))
 (defmethod color-dist ((color1 sdl:color) (color2 sdl:color))
@@ -458,7 +453,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
       (and (age-turns anim) (incf (age-turns anim))))
     (setf (status *game*) :playing)))
 
-(defgeneric distance (p1 p2))
 (defmethod distance ((p1 coord) (p2 coord))
   (with-accessors ((x1 x) (y1 y)) p1
     (with-accessors ((x2 x) (y2 y)) p2
@@ -466,7 +460,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
 (defmethod distance ((m1 monster) (m2 monster))
   (distance (pos m1) (pos m2)))
 
-(defgeneric cast-spell (spell spot))
 
 (defmethod cast-spell ((spell (eql :fire)) spot)
   (declare (ignore spell)) 
@@ -505,7 +498,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (snap (map 'vector (lambda (t1 t2) (mutate (/ (+ t1 t2) 2) tolerance))
              v1 v2)))
 
-(defgeneric mate (slug1 slug2))
 (defmethod mate ((slug1 slug) (slug2 slug))
   (push (make-mate-anim (pos slug1)) (active-animations *game*))
   (push (make-mate-anim (pos slug2)) (active-animations *game*))
@@ -525,7 +517,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
         (decf (food slug2) (trait-magnitude spawn))
         (push spawn (daughters slug1))))))
 
-(defgeneric mutate (slug &optional tolerance))
 
 (defmethod mutate ((slug slug) &optional tolerance)
   (declare (ignore tolerance))
@@ -585,7 +576,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
               (coord (+ (x coords) (random-delta 100))
                      (+ (y coords) (random-delta 100))))))
 
-(defgeneric take-turn (monster world))
 
 (defmethod take-turn ((monster slug-font) world)
   (let ((coords (pos monster)))
@@ -688,7 +678,6 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
          (walk-toward monster (target monster) *world*))))
 
 
-(defgeneric find-home-font (world slug))
 (defmethod find-home-font ((world world) (slug slug))
   (let* ((fonts (remove-if-not (lambda (x) (typep x 'slug-font))
                                (alexandria:hash-table-values (monsters world))))
@@ -775,7 +764,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
         collect (list alpha (* (sqrt alpha) (random-delta 20))
                             (* (sqrt alpha) (random-delta 20)))))
 
-(defgeneric draw (object x y window))
 
 (defmethod draw ((object world) x0 y0 window)
   (dolist (monster (alexandria:hash-table-values (monsters object)))
@@ -839,7 +827,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                   :surface window :color sdl:*white*))
 
 
-(defgeneric move (object dx dy))
 (defmethod move ((monster monster) dx dy)
   (remove-monster monster *world*)
   (setf (pos monster) (move (pos monster) dx dy))
@@ -851,7 +838,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (setf (status *game*) :end-turn))
 
 
-(defgeneric random-move (monster world))
 (defmethod random-move ((monster monster) world)
   (let ((directions (list (list 1 0) (list -1 0) (list 0 1) (list 0 -1))))
     (destructuring-bind (dx dy)
@@ -866,7 +852,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
                         directions))))
       (move monster dx dy))))
 
-(defgeneric walk-toward (monster spot world))
 (defmethod walk-toward ((monster monster) spot world)
   (let ((x (x monster))
         (y (y monster)))
@@ -883,7 +868,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 
 
 
-(defgeneric world-at (world x y))
 (defmethod world-at (world x y)
   (gethash (vector x y) (monsters world)))
 (defun (setf world-at) (value world x y)
@@ -941,7 +925,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
   (let ((x (mod num divisor)))
     (values x (floor (/ num divisor)))))
 
-(defgeneric draw-slug-info (slug w h))
 (defmethod draw-slug-info ((slug slug) w h)
   (let ((surface (sdl:create-surface w h))
         (height *font-height*)
@@ -986,7 +969,6 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
 (defmethod draw-slug-info ((slug player) w h)
   ())
 
-(defgeneric slug-info-string (slug))
 (defmethod slug-info-string ((slug slug))
   (format nil "
 ====================

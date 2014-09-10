@@ -18,9 +18,6 @@
 (defmethod space-height ((arr rectangular-arrangement))
   (aref (spacing arr) 1))
 
-(defgeneric draw-arrangement (arr)
-  (:documentation "Returns an SDL surface containing the pictorial representation of `arr'."))
-
 (defmethod draw-arrangement ((arr rectangular-arrangement))
   (declare (special *tile-size*))
   (let* ((w (width arr))
