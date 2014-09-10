@@ -29,3 +29,11 @@
          (multiple-value-bind (x y) (mod* i (/ w *tile-size*))
            (draw item x y arr-surface)))
     arr-surface))
+
+
+(defun make-rect-arrangement (items w h &optional (space-x 0) (space-y 0))
+  (make-instance 'rectangular-arrangement :items items :dimensions (vector w h)
+                 :spacing (vector space-x space-y)))
+
+(defmethod world-at ((arr rectangular-arrangement) x y)
+  (nth (+ (* y (width arr)) x) (items arr)))
