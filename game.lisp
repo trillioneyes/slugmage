@@ -17,6 +17,8 @@
 (defparameter *font-height* 8)
 (defparameter *font-width* 8)
 (defparameter *tile-size* 10)
+(defparameter *inventory-width* 80)
+(defparameter *inventory-height* 40)
 
 (defparameter *num-traits-defined* 0
   "The number of define-trait forms that have been evaluated so far.")
@@ -1006,16 +1008,6 @@ Food: ~s, Life: ~s, Weight: ~s
                                0 height :surface surface) 
         (list surface))))
 
-(defun inventory-world (list w h)
-  (if list
-      (apply #'register (make-instance 'world)
-             (loop for i upto (* w h) for slug in list do
-                   (setf (pos slug)
-                         (multiple-value-call
-                          #'coord (mod* i (/ w *tile-size*))))
-                   collect slug))
-      (make-instance 'world)))
-
  (defun draw-inventory (w h)
    (list (draw-arrangement (make-rect-arrangement (inventory (player *world*)) w h))))
 
@@ -1051,7 +1043,7 @@ Click a spell to select it.")
 (defun draw-ui (window)
   (let ((top (ui-top *game*))
         (border (ui-border *game*))
-        (ui-widgets (list (draw-inventory 80 40)
+        (ui-widgets (list (draw-inventory *inventory-width* *inventory-height*)
                           (draw-spells 40 10)
                           (draw-controls 200)
                           (draw-slug-info (selected-slug *game*) 200 40)
@@ -1074,8 +1066,8 @@ Click a spell to select it.")
     (world-at world x y)))
 
 (defun inv-at-cursor (x y)
-  (at-cursor (inventory-world
-              (reverse (inventory (player (world *game*)))) 80 40)
+  (at-cursor (make-rect-arrangement (inventory (player *world*))
+                                    *inventory-width* *inventory-height*)
              (- x (ui-border *game*))
              (- y (ui-border *game*) (ui-top *game*))
              0 0))
@@ -1213,7 +1205,8 @@ Click a spell to select it.")
                    (let ((x0 (x (player *world*)))
                          (y0 (y (player *world*))))
                      (at-cursor (world *game*) x y (- x0 40) (- y0 30))))
-                  ((< x (+ (ui-border *game*) 80))
+                  ((and (> y (+ (ui-border *game*) (ui-top *game*)))
+                        (< (ui-border *game*) x (+ (ui-border *game*) 80)))
                    (inv-at-cursor x y)))
             (active-spell *game*)
             (if (not (eq (status *game*) :cast))
