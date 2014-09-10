@@ -1035,11 +1035,10 @@ Food: ~s, Life: ~s, Weight: ~s
       (make-instance 'world)))
 
  (defun draw-inventory (w h)
-  (let ((inventory-surface (sdl:create-surface w h))
-        (inventory (inventory-world
-                    (reverse (inventory (player (world *game*))))
-                    w h)))
-    (draw inventory 0 0 inventory-surface)
+  (let ((inventory-surface (sdl:create-surface w h)))
+    (loop for i from 0 upto (* w h) for slug in (inventory (player *world*)) do
+         (multiple-value-bind (x y) (mod* i (/ w *tile-size*))
+           (draw slug x y inventory-surface)))
     (list inventory-surface)))
 
 (defun draw-spells (w h)
