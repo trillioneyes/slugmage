@@ -555,6 +555,10 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
          (eat slug2 slug1 world))
         ((< (life slug2) 1 (life slug1))
          (eat slug1 slug2 world))
+        ((and (not (alive? slug1))
+              (not (alive? slug2)))
+         (kill slug1 world)
+         (kill slug2 world))
         (t
          (push (make-bash-anim (pos slug1))
                (active-animations *game*))
