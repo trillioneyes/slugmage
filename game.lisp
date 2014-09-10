@@ -425,9 +425,9 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
   (loop for dx from (- dist) upto dist append
        (loop for dy from (- dist) upto dist
           when (not (and (= dx 0) (= dy 0)))
-          when (typep (item-at world (+ (x spot) dx) (+ (y spot) dy))
+          when (typep (world-at world (+ (x spot) dx) (+ (y spot) dy))
                       filter-type)
-          collect (item-at world (+ (x spot) dx) (+ (y spot) dy)))))
+          collect (world-at world (+ (x spot) dx) (+ (y spot) dy)))))
 (defun population (&rest args)
   (length (apply 'neighbors args)))
 (defun density (&rest args)
@@ -484,8 +484,8 @@ Traits should be: max-life, weapon, armor, grazing, hunting"
 (defmethod cast-spell ((spell (eql :hand)) spot)
   (declare (ignore spell))
   (destructuring-bind (x y) spot
-    (if (item-at *world* x y)
-        (push (make-grab-anim (item-at *world* x y) (pos (player *world*)) 60)
+    (if (world-at *world* x y)
+        (push (make-grab-anim (world-at *world* x y) (pos (player *world*)) 60)
               (active-animations *game*)))
     (grab (world *game*) x y)))
 
@@ -909,7 +909,7 @@ x and y are the coordinates to draw to. period is the length of one full blink-o
           (active-animations *game*))))
 
 (defun grab (world x y)
-  (let ((item (item-at world x y)))
+  (let ((item (world-at world x y)))
     (when (and item (< (+ (inv-weight (player world))
                           (weight item))
                        (weight (player world))))
@@ -1094,7 +1094,7 @@ Click a spell to select it.")
 (defun at-cursor (world x y x0 y0)
   (let ((x (+ (floor (/ x *tile-size*)) x0))
         (y (+ (floor (/ y *tile-size*)) y0)))
-    (item-at world x y)))
+    (world-at world x y)))
 
 (defun inv-at-cursor (x y)
   (at-cursor (inventory-world
